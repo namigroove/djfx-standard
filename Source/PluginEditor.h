@@ -71,7 +71,7 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     StepSlider slider;
-    juce::String name;
+    juce::String name, minLabel, maxLabel;
     std::function<juce::String()> valueText;
 private:
     std::unique_ptr<juce::SliderParameterAttachment> att;
@@ -80,13 +80,15 @@ private:
 class ChoiceGroup : public juce::Component, private juce::Timer
 {
 public:
-    ChoiceGroup (juce::AudioProcessorValueTreeState&, const juce::ParameterID&, juce::StringArray labels, int cols, int gap = 4, bool led = false);
+    ChoiceGroup (juce::AudioProcessorValueTreeState&, const juce::ParameterID&, juce::StringArray labels, int cols, int gap = 4, bool led = false,
+                 int indexOffset = 0, bool toggleOff = false);
     void resized() override;
 private:
     void timerCallback() override;
     juce::AudioProcessorValueTreeState& apvts;
     juce::String pid;
-    int cols, gap;
+    int cols, gap, offset;
+    bool offToggle;
     juce::OwnedArray<juce::TextButton> buttons;
 };
 
@@ -127,9 +129,29 @@ class FxDisplay : public juce::Component, private juce::Timer
 public:
     explicit FxDisplay (NamiDJFXProcessor&);
     void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void stepBeat (int dir);                 // BEAT ◀▶ と同じ動き(拍同期に切り替える)
 private:
+    void setBeatIndex (int idx);
     void timerCallback() override { repaint(); }
     NamiDJFXProcessor& proc;
+};
+
+// エフェクト選択のロータリー。実機のように周りに名前が並び、つまみが選択中を指す。
+class FxSelector : public juce::Component
+{
+public:
+    explicit FxSelector (juce::AudioProcessorValueTreeState&);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+private:
+    juce::Rectangle<float> labelRect (int i) const;
+    float angleOf (int i) const;
+    void select (int i);
+    juce::AudioProcessorValueTreeState& apvts;
+    int dragStartIndex = 0;
 };
 
 class NamiDJFXEditor : public juce::AudioProcessorEditor, private juce::Timer
@@ -154,15 +176,18 @@ private:
     juce::Image faceImage;
     juce::Rectangle<int> boxA, boxB, boxC;
 
-    std::unique_ptr<ChoiceGroup> fxTypes, fxBands, colorTypes, latency;
+    std::unique_ptr<ChoiceGroup> colorTypes, latency;
+    std::unique_ptr<FxSelector> fxSel;
     std::unique_ptr<XPad> xpad;
     std::unique_ptr<JogWheel> jog;
     std::unique_ptr<FxDisplay> lcd;
-    std::unique_ptr<Knob> kBeat, kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kLoop, kBpm, kOut;
+    std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kLoop, kBpm, kOut;
     juce::OwnedArray<juce::TextButton> toggles;
     juce::OwnedArray<HoldButton> holds;
     juce::OwnedArray<juce::ButtonParameterAttachment> btnAtts;
-    juce::TextButton* bOn = nullptr; juce::TextButton* bSync = nullptr; juce::TextButton* bLock = nullptr;
+    juce::TextButton *bOn = nullptr, *bSync = nullptr, *bLock = nullptr, *bLow = nullptr, *bMid = nullptr, *bHi = nullptr;
+    juce::TextButton *bPrev = nullptr, *bNext = nullptr, *bTap = nullptr;
+    std::vector<double> tapTimes;
     HoldButton *hBack = nullptr, *hBrake = nullptr, *hRev = nullptr, *hLoop = nullptr;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NamiDJFXEditor)
 };

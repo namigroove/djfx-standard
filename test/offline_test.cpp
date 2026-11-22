@@ -71,28 +71,28 @@ int main()
     }
 
     std::printf("[2] 帯域選択(LOW/MID/HI)でFX OFFでも信号が壊れないか\n");
-    for (int band = 1; band <= 3; ++band)
+    for (int band : { 1, 2, 4, 3, 6, 5 })
     {
         std::vector<float> L, R; makeSignal (L, R, N); auto L0 = L;
-        Engine e; e.prepare (SR); Params p; p.fxBand = band; p.fxType = kFlanger; run (e, L, R, p, host);
+        Engine e; e.prepare (SR); Params p; p.fxBandMask = band; p.fxType = kFlanger; run (e, L, R, p, host);
         double maxd = 0; for (int i = 0; i < N; ++i) maxd = std::max (maxd, (double) std::fabs (L[(size_t) i] - L0[(size_t) i]));
         std::printf("  band %d: max diff = %g\n", band, maxd);
         CHECK (maxd < 1e-4, "band split not reconstructing");
     }
 
-    std::printf("[3] BEAT FX 14種 x (同期/ms) x (ALL/LOW/HI) : 有限値・ピーク・無音でないこと\n");
+    std::printf("[3] BEAT FX 14種 x (同期/ms) x (帯域 全/LOW/HI/MID+HI) : 有限値・ピーク・無音でないこと\n");
     for (int t = 0; t < kNumFx; ++t)
         for (int sync = 0; sync < 2; ++sync)
-            for (int band : { 0, 1, 3 })
+            for (int band : { 7, 1, 4, 6 })
             {
                 std::vector<float> L, R; makeSignal (L, R, N); auto L0 = L;
                 Engine e; e.prepare (SR);
-                Params p; p.fxOn = true; p.fxType = t; p.fxSync = sync; p.fxBand = band; p.fxLevel = 0.8f; p.fxBeat = 0.5f; p.fxTimeMs = 375.f;
+                Params p; p.fxOn = true; p.fxType = t; p.fxSync = sync; p.fxBandMask = band; p.fxLevel = 0.8f; p.fxBeat = 0.5f; p.fxTimeMs = 375.f;
                 run (e, L, R, p, host);
                 Stat s = stat (L, (int) (SR * 1), N);
                 double diff = 0; for (int i = (int) SR; i < N; ++i) diff += std::fabs (L[(size_t) i] - L0[(size_t) i]);
                 bool ok = ! s.bad && s.peak < 6.f && diff > 1.0;
-                if (!ok || (sync == 1 && band == 0)) std::printf("  %-14s sync=%d band=%d peak=%.2f rms=%.3f diff=%.1f %s\n", fxName (t), sync, band, s.peak, s.rms, diff, ok ? "" : "<<");
+                if (!ok || (sync == 1 && band == 7)) std::printf("  %-14s sync=%d band=%d peak=%.2f rms=%.3f diff=%.1f %s\n", fxName (t), sync, band, s.peak, s.rms, diff, ok ? "" : "<<");
                 CHECK (ok, "%s sync=%d band=%d", fxName (t), sync, band);
             }
 
@@ -280,7 +280,7 @@ int main()
             if ((off / blk) % 20 == 0)
             {
                 auto rnd = [] { return (float) std::rand() / RAND_MAX; };
-                p.fxOn = rnd() > 0.3f; p.fxType = std::rand() % kNumFx; p.fxBand = std::rand() % 4; p.fxSync = rnd() > 0.3f;
+                p.fxOn = rnd() > 0.3f; p.fxType = std::rand() % kNumFx; p.fxBandMask = std::rand() % 8; p.fxSync = rnd() > 0.3f;
                 p.fxBeat = rnd(); p.fxTimeMs = 1.f + rnd() * 31999.f; p.fxLevel = rnd(); p.xpadTouch = rnd() > 0.7f; p.xpad = rnd();
                 p.colorType = std::rand() % kNumColor; p.colorKnob = rnd() * 2 - 1; p.colorParam = rnd(); p.centerLock = rnd() > 0.5f;
                 p.jogBackspin = rnd() > 0.85f; p.jogBrake = rnd() > 0.85f; p.jogReverse = rnd() > 0.85f; p.jogScratch = rnd() > 0.85f; p.jogLoop = rnd() > 0.85f;

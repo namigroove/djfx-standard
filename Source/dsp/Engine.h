@@ -65,7 +65,7 @@ struct Params
 {
     bool  fxOn = false;
     int   fxType = kEcho;
-    int   fxBand = 0;          // 0=ALL 1=LOW 2=MID 3=HI
+    int   fxBandMask = 7;      // FX FREQUENCY: LOW=1 MID=2 HI=4 の組み合わせ(7=全帯域)
     bool  fxSync = true;
     float fxBeat = 0.5f;       // 0..1(リスト内の位置)
     float fxTimeMs = 500.f;
@@ -218,7 +218,8 @@ private:
         ppqInternal = ppq0 + n * perSample;
 
         // ---- 帯域選択(LOW/MID/HIは選んだ帯域だけにFXをかける)
-        const bool all = p.fxBand == 0;
+        const int bandMask = p.fxBandMask & 7;
+        const bool all = bandMask == 0 || bandMask == 7;
         if (! all)
         {
             for (auto& f : bandLo) f.set (250.f, 0.7071f, sr);
@@ -236,7 +237,7 @@ private:
                     float rest = x - low;
                     float mid = bandMid[c * 2 + 1].lp (bandMid[c * 2].lp (rest));
                     float hi = rest - mid;
-                    sel = p.fxBand == 1 ? low : (p.fxBand == 2 ? mid : hi);
+                    sel = ((bandMask & 1) ? low : 0.f) + ((bandMask & 2) ? mid : 0.f) + ((bandMask & 4) ? hi : 0.f);
                 }
                 (*dry[c])[(size_t) i] = sel;
                 io[c][i] = x - sel;   // バイパスされる帯域

@@ -5,7 +5,7 @@
 namespace ids
 {
 #define NAMI_ID(x) static const juce::ParameterID x { #x, 1 }
-NAMI_ID (fxOn); NAMI_ID (fxType); NAMI_ID (fxBand); NAMI_ID (fxSync); NAMI_ID (fxBeat); NAMI_ID (fxTime);
+NAMI_ID (fxOn); NAMI_ID (fxType); NAMI_ID (bandLow); NAMI_ID (bandMid); NAMI_ID (bandHi); NAMI_ID (fxSync); NAMI_ID (fxBeat); NAMI_ID (fxTime);
 NAMI_ID (fxLevel); NAMI_ID (xpadTouch); NAMI_ID (xpadPos);
 NAMI_ID (colorType); NAMI_ID (colorKnob); NAMI_ID (colorParam); NAMI_ID (centerLock);
 NAMI_ID (jogBackspin); NAMI_ID (jogBrake); NAMI_ID (jogReverse); NAMI_ID (jogScratch); NAMI_ID (jogLoop);
@@ -30,7 +30,9 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 
     boolP (ids::fxOn, "FX On", false);
     p.push_back (std::make_unique<AudioParameterChoice> (ids::fxType, "FX Type", fx, (int) djfx::kEcho));
-    p.push_back (std::make_unique<AudioParameterChoice> (ids::fxBand, "FX Band", StringArray { "ALL", "LOW", "MID", "HI" }, 0));
+    boolP (ids::bandLow, "FX Freq Low", true);
+    boolP (ids::bandMid, "FX Freq Mid", true);
+    boolP (ids::bandHi, "FX Freq Hi", true);
     boolP (ids::fxSync, "FX BPM Sync", true);
     floatP (ids::fxBeat, "FX Beat", { 0.f, 1.f }, 0.5f);
     NormalisableRange<float> tr (1.f, 32000.f, 0.f, 0.3f);
@@ -65,7 +67,8 @@ inline djfx::Params readParams (juce::AudioProcessorValueTreeState& s)
 {
     auto f = [&] (const juce::ParameterID& id) { return s.getRawParameterValue (id.getParamID())->load(); };
     djfx::Params p;
-    p.fxOn = f (ids::fxOn) > 0.5f;           p.fxType = (int) f (ids::fxType);       p.fxBand = (int) f (ids::fxBand);
+    p.fxOn = f (ids::fxOn) > 0.5f;           p.fxType = (int) f (ids::fxType);
+    p.fxBandMask = (f (ids::bandLow) > 0.5f ? 1 : 0) | (f (ids::bandMid) > 0.5f ? 2 : 0) | (f (ids::bandHi) > 0.5f ? 4 : 0);
     p.fxSync = f (ids::fxSync) > 0.5f;       p.fxBeat = f (ids::fxBeat);             p.fxTimeMs = f (ids::fxTime);
     p.fxLevel = f (ids::fxLevel);            p.xpadTouch = f (ids::xpadTouch) > 0.5f; p.xpad = f (ids::xpadPos);
     p.colorType = (int) f (ids::colorType);  p.colorKnob = f (ids::colorKnob);       p.colorParam = f (ids::colorParam);

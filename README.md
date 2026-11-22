@@ -13,7 +13,9 @@ Windows / Mac のVST3。出力ファイルは `DJFX Standard.vst3`(CMakeのタ�
 DELAY / ECHO / PING PONG / SPIRAL / HELIX / REVERB / FLANGER / PHASER / FILTER / TRIPLET FILTER / TRANS / ROLL / TRIPLET ROLL / MOBIUS
 
 - BPM同期(1/16〜64拍)と、ミリ秒指定の切り替え
-- 帯域選択: ALL / LOW(〜250Hz) / MID / HI(2.5kHz〜)。選んだ帯域だけにかかります
+- FX FREQUENCY: LOW(〜250Hz) / MID / HI(2.5kHz〜)を組み合わせて選べます(実機と同じ)。選んだ帯域だけにFXがかかります
+- 液晶の拍表示、BEAT ◀▶、TAP(タップテンポ)で時間を選びます。TIMEノブを回すと自由な時間(ms)になります
+- エフェクトは周りに名前が並んだロータリーで選びます(名前のクリック、つまみのドラッグ、ホイール)
 - X-PAD: 触っている間だけON。左右に動かすと時間(拍)が変わります
 - LEVEL/DEPTH: 効果の量
 

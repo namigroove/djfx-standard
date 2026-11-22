@@ -33,24 +33,26 @@ Font NamiLnF::fontBold (float scale) const
     return Font (FontOptions (Font::getDefaultMonospacedFontName(), 11.f * scale, Font::bold));
 }
 
-// 小さなパッド。点灯中は縁と文字に色が付く。"led"なら左にランプ、"round"なら丸い大ボタン。
+// 小さなパッド。点灯中は縁と文字に色が付く。"led"なら左にランプ、"round"なら丸い大ボタン、"bold"なら実機のFREQUENCYボタンのような太い縁。
 void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool hover, bool down)
 {
     const Colour accent ((uint32) (int) b.getProperties().getWithDefault ("accent", (int) ui::teal.getARGB()));
     const bool on = b.getToggleState();
     const bool round = (bool) b.getProperties().getWithDefault ("round", false);
+    const bool bold = (bool) b.getProperties().getWithDefault ("bold", false);
     auto r = b.getLocalBounds().toFloat();
 
     if (round)
     {
+        const bool lit = on || down;
         const float d = std::min (r.getWidth(), r.getHeight()) - 2.f;
         auto c = r.getCentre();
         g.setColour (ui::well);   g.fillEllipse (c.x - d / 2 - 3, c.y - d / 2 - 3, d + 6, d + 6);
         g.setColour (ui::padEdge); g.drawEllipse (c.x - d / 2 - 3, c.y - d / 2 - 3, d + 6, d + 6, 1.f);
-        g.setColour (on ? accent : ui::line);
+        g.setColour (lit ? accent : ui::line);
         g.fillEllipse (c.x - d / 2, c.y - d / 2, d, d);                 // リングのLED
         const float di = d - 7.f;
-        g.setColour (down ? ui::panel : ui::padOff);
+        g.setColour (ui::padOff);
         g.fillEllipse (c.x - di / 2, c.y - di / 2, di, di);
         g.setColour (ui::padEdge);
         g.drawEllipse (c.x - di / 2, c.y - di / 2, di, di, 1.f);
@@ -59,10 +61,20 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
 
     r = r.reduced (0.5f);
     g.setColour (down ? ui::panel : ui::padOff);
-    g.fillRoundedRectangle (r, 2.f);
-    if (on) { g.setColour (accent.withAlpha (0.14f)); g.fillRoundedRectangle (r, 2.f); }
-    g.setColour (on ? accent : (hover ? ui::dim : ui::padEdge));
-    g.drawRoundedRectangle (r, 2.f, 1.f);
+    g.fillRoundedRectangle (r, bold ? 3.f : 2.f);
+    if (on) { g.setColour (accent.withAlpha (bold ? 0.22f : 0.14f)); g.fillRoundedRectangle (r, bold ? 3.f : 2.f); }
+    if (bold)
+    {
+        g.setColour (on ? accent : ui::padEdge);
+        g.drawRoundedRectangle (r, 3.f, 2.f);
+        g.setColour (on ? accent.withAlpha (0.45f) : Colour (0xff18233e));
+        g.drawRoundedRectangle (r.reduced (3.f), 2.f, 1.f);
+    }
+    else
+    {
+        g.setColour (on ? accent : (hover ? ui::dim : ui::padEdge));
+        g.drawRoundedRectangle (r, 2.f, 1.f);
+    }
     if ((bool) b.getProperties().getWithDefault ("led", false))
     {
         const float cy = r.getCentreY();
@@ -76,6 +88,16 @@ void NamiLnF::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     const Colour accent ((uint32) (int) b.getProperties().getWithDefault ("accent", (int) ui::teal.getARGB()));
     const bool on = b.getToggleState();
     const bool round = (bool) b.getProperties().getWithDefault ("round", false);
+    const int arrow = (int) b.getProperties().getWithDefault ("arrow", 0);
+    if (arrow != 0)                                            // ◀ ▶ はフォントに頼らず三角形を描く
+    {
+        auto c = b.getLocalBounds().toFloat().getCentre();
+        Path t; const float sz = 6.f;
+        t.addTriangle (c.x + arrow * sz, c.y, c.x - arrow * sz * 0.8f, c.y - sz, c.x - arrow * sz * 0.8f, c.y + sz);
+        g.setColour (ui::text);
+        g.fillPath (t);
+        return;
+    }
     g.setFont (font (round ? 0.8f : 0.9f));
     g.setColour (on ? (round ? ui::text : accent) : ui::text.withAlpha (0.82f));
     auto area = b.getLocalBounds().reduced (2, 0);
@@ -83,7 +105,42 @@ void NamiLnF::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     g.drawText (b.getButtonText(), area, Justification::centred, false);
 }
 
-// 滑り止めの刻みが付いた金属キャップのノブ。ポインタは白。
+// つまみのキャップ。ring: 黒い胴に白いリング(EQ/TRIMなど)、knurl: 滑り止めの溝付き(COLOR・エフェクト選択)
+static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool knurl, bool dimmed)
+{
+    g.setColour (ui::well);                                  // 取り付け穴の影
+    g.fillEllipse (c.x - rBody - 2.f, c.y - rBody - 2.f, (rBody + 2.f) * 2, (rBody + 2.f) * 2);
+    if (knurl)
+    {
+        g.setColour (Colour (0xff1b2745));
+        g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
+        for (int i = 0; i < 36; ++i)
+        {
+            const float a = MathConstants<float>::twoPi * (float) i / 36.f;
+            g.setColour (Colour (0xff7d93b3));
+            g.drawLine (c.x + std::sin (a) * (rBody - 6.f), c.y - std::cos (a) * (rBody - 6.f),
+                        c.x + std::sin (a) * rBody, c.y - std::cos (a) * rBody, 2.f);
+        }
+        g.setColour (ui::padEdge);
+        g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.f);
+        const float rt = rBody - 7.f;
+        g.setColour (Colour (0xff0e1528)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
+        g.setColour (Colour (0xff26355a)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
+    }
+    else
+    {
+        g.setColour (ui::ink);                               // 黒い胴
+        g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
+        g.setColour (dimmed ? ui::dim : ui::text);           // 白いリング
+        g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 2.4f);
+        g.setColour (Colour (0xff17213b));
+        g.drawEllipse (c.x - rBody + 4.f, c.y - rBody + 4.f, (rBody - 4.f) * 2, (rBody - 4.f) * 2, 1.f);
+    }
+    g.setColour (dimmed ? ui::dim : ui::text);               // 白い太いポインタ
+    g.drawLine (c.x + std::sin (angle) * (rBody * 0.12f), c.y - std::cos (angle) * (rBody * 0.12f),
+                c.x + std::sin (angle) * (rBody - 3.f), c.y - std::cos (angle) * (rBody - 3.f), 3.f);
+}
+
 void NamiLnF::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float pos, float a0, float a1, Slider& s)
 {
     const auto area = Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
@@ -92,38 +149,32 @@ void NamiLnF::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float p
     const float rOuter = d * 0.5f - 1.f;
     const float rBody = rOuter - 7.f;
     const bool bipolar = (bool) s.getProperties().getWithDefault ("bipolar", false);
+    const bool knurl = (bool) s.getProperties().getWithDefault ("knurl", false);
     const bool dimmed = s.getAlpha() < 0.9f;
 
-    for (int i = 0; i <= 10; ++i)   // 外周の目盛り(シルク)
+    if (knurl)   // COLORのように、左右へ開いた白い弧(上は切れている)
     {
-        const float a = a0 + (a1 - a0) * (float) i / 10.f;
-        const bool mid = bipolar && i == 5;
-        const float r0 = rOuter - (mid ? 6.f : (i % 5 == 0 ? 4.5f : 3.f)), r1 = rOuter;
-        g.setColour (mid ? ui::amber : ui::dim.withAlpha (0.85f));
-        g.drawLine (c.x + std::sin (a) * r0, c.y - std::cos (a) * r0, c.x + std::sin (a) * r1, c.y - std::cos (a) * r1, 1.f);
+        const float mid = (a0 + a1) * 0.5f, gap = 0.12f;
+        for (int side = 0; side < 2; ++side)
+        {
+            Path arc;
+            const float from = side ? mid + gap : a0 - 0.05f, to = side ? a1 + 0.05f : mid - gap;
+            arc.addCentredArc (c.x, c.y, rOuter - 1.f, rOuter - 1.f, 0.f, from, to, true);
+            g.setColour (ui::text.withAlpha (0.9f));
+            g.strokePath (arc, PathStrokeType (1.6f));
+        }
     }
-    g.setColour (ui::well);                                  // 取り付け穴の影
-    g.fillEllipse (c.x - rBody - 1.5f, c.y - rBody - 1.5f, (rBody + 1.5f) * 2, (rBody + 1.5f) * 2);
-    g.setColour (Colour (0xff1b2745));                       // キャップ側面
-    g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
-    for (int i = 0; i < 28; ++i)                             // 刻み
-    {
-        const float a = MathConstants<float>::twoPi * (float) i / 28.f;
-        g.setColour (ui::line);
-        g.drawLine (c.x + std::sin (a) * (rBody - 3.2f), c.y - std::cos (a) * (rBody - 3.2f),
-                    c.x + std::sin (a) * rBody, c.y - std::cos (a) * rBody, 1.4f);
-    }
-    g.setColour (ui::padEdge);
-    g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.f);
-    const float rTop = rBody - 4.f;                          // キャップの天面
-    g.setColour (Colour (0xff111a31));
-    g.fillEllipse (c.x - rTop, c.y - rTop, rTop * 2, rTop * 2);
-    g.setColour (Colour (0xff26355a));
-    g.drawEllipse (c.x - rTop, c.y - rTop, rTop * 2, rTop * 2, 1.f);
-    const float a = a0 + pos * (a1 - a0);
-    g.setColour (dimmed ? ui::dim : ui::text);
-    g.drawLine (c.x + std::sin (a) * (rTop * 0.2f), c.y - std::cos (a) * (rTop * 0.2f),
-                c.x + std::sin (a) * (rTop - 1.5f), c.y - std::cos (a) * (rTop - 1.5f), 2.f);
+    else
+        for (int i = 0; i <= 10; ++i)   // 実機のような点の目盛り(中央だけ大きい)
+        {
+            const float a = a0 + (a1 - a0) * (float) i / 10.f;
+            const bool mid = bipolar && i == 5;
+            const float rr = rOuter - 1.f;
+            g.setColour (mid ? ui::amber : ui::text.withAlpha (0.8f));
+            const float rad = (i == 0 || i == 10 || mid) ? 1.7f : 1.2f;
+            g.fillEllipse (c.x + std::sin (a) * rr - rad, c.y - std::cos (a) * rr - rad, rad * 2, rad * 2);
+        }
+    drawCap (g, c, knurl ? rBody + 1.f : rBody, a0 + pos * (a1 - a0), knurl, dimmed);
 }
 
 // ------------------------------------------------------------------ Knob
@@ -142,22 +193,38 @@ Knob::Knob (AudioProcessorValueTreeState& s, const ParameterID& id, const String
 }
 void Knob::resized()
 {
-    const int d = std::min (getWidth(), getHeight() - 28);
+    const int d = std::min (getWidth(), getHeight() - 42);
     slider.setBounds ((getWidth() - d) / 2, 0, d, d);
 }
 void Knob::paint (Graphics& g)
 {
     auto& l = dynamic_cast<NamiLnF&> (getLookAndFeel());
+    const auto sb = slider.getBounds().toFloat();
+    const auto c = sb.getCentre();
+    const float r = sb.getWidth() * 0.5f - 1.f;
+    g.setFont (l.font (0.78f));
+    g.setColour (ui::dim);
+    const float a0 = MathConstants<float>::pi * 1.2f, a1 = MathConstants<float>::pi * 2.8f;
+    auto endLabel = [&] (const String& t, float a, Justification j)
+    {
+        if (t.isEmpty()) return;
+        const float x = c.x + std::sin (a) * r, y = c.y - std::cos (a) * r + 9.f;
+        const int tw = 44;
+        g.drawText (t, (int) (j == Justification::centredRight ? x + 6 - tw : x - 6), (int) y - 6, tw, 12, j, false);
+    };
+    endLabel (minLabel, a0, Justification::centredRight);
+    endLabel (maxLabel, a1, Justification::centredLeft);
     g.setFont (l.font (0.9f));
     g.setColour (ui::amber);
     g.drawText (valueText ? valueText() : String(), 0, getHeight() - 28, getWidth(), 14, Justification::centred, false);
-    g.setColour (ui::text.withAlpha (0.85f));
+    g.setColour (ui::text.withAlpha (0.9f));
     g.drawText (name, 0, getHeight() - 14, getWidth(), 14, Justification::centred, false);
 }
 
 // ------------------------------------------------------------------ ChoiceGroup
-ChoiceGroup::ChoiceGroup (AudioProcessorValueTreeState& s, const ParameterID& id, StringArray labels, int c, int g, bool led)
-    : apvts (s), pid (id.getParamID()), cols (c), gap (g)
+ChoiceGroup::ChoiceGroup (AudioProcessorValueTreeState& s, const ParameterID& id, StringArray labels, int c, int g, bool led,
+                          int indexOffset, bool toggleOff)
+    : apvts (s), pid (id.getParamID()), cols (c), gap (g), offset (indexOffset), offToggle (toggleOff)
 {
     for (int i = 0; i < labels.size(); ++i)
     {
@@ -166,8 +233,10 @@ ChoiceGroup::ChoiceGroup (AudioProcessorValueTreeState& s, const ParameterID& id
         b->onClick = [this, i]
         {
             auto* p = apvts.getParameter (pid);
+            const int cur = (int) apvts.getRawParameterValue (pid)->load();
+            const int target = (offToggle && cur == i + offset) ? 0 : i + offset;   // 点灯中をもう一度押すとOFF
             p->beginChangeGesture();
-            p->setValueNotifyingHost (p->convertTo0to1 ((float) i));
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) target));
             p->endChangeGesture();
         };
         addAndMakeVisible (b);
@@ -184,7 +253,7 @@ void ChoiceGroup::resized()
 void ChoiceGroup::timerCallback()
 {
     const int cur = (int) apvts.getRawParameterValue (pid)->load();
-    for (int i = 0; i < buttons.size(); ++i) buttons[i]->setToggleState (i == cur, dontSendNotification);
+    for (int i = 0; i < buttons.size(); ++i) buttons[i]->setToggleState (i + offset == cur, dontSendNotification);
 }
 
 // ------------------------------------------------------------------ X-PAD
@@ -304,7 +373,46 @@ void JogWheel::paint (Graphics& g)
 }
 
 // ------------------------------------------------------------------ 液晶表示
+static void setParamValue (AudioProcessorValueTreeState& apvts, const ParameterID& id, float v)
+{
+    auto* p = apvts.getParameter (id.getParamID());
+    p->beginChangeGesture();
+    p->setValueNotifyingHost (p->convertTo0to1 (v));
+    p->endChangeGesture();
+}
+
 FxDisplay::FxDisplay (NamiDJFXProcessor& p) : proc (p) { startTimerHz (20); }
+
+void FxDisplay::setBeatIndex (int idx)
+{
+    const int type = jlimit (0, djfx::kNumFx - 1, (int) proc.apvts.getRawParameterValue (ids::fxType.getParamID())->load());
+    setParamValue (proc.apvts, ids::fxBeat, djfx::beatNormFromIndex (type, jlimit (0, djfx::beatListFor (type).n - 1, idx)));
+    setParamValue (proc.apvts, ids::fxSync, 1.f);                        // 実機と同じ: BEATを選ぶと拍同期になる
+}
+void FxDisplay::stepBeat (int dir)
+{
+    const int type = jlimit (0, djfx::kNumFx - 1, (int) proc.apvts.getRawParameterValue (ids::fxType.getParamID())->load());
+    const float norm = proc.apvts.getRawParameterValue (ids::fxBeat.getParamID())->load();
+    if (type == djfx::kReverb) { setParamValue (proc.apvts, ids::fxBeat, jlimit (0.f, 1.f, norm + 0.1f * (float) dir)); return; }
+    setBeatIndex (djfx::beatIndex (type, norm) + dir);
+}
+void FxDisplay::mouseDown (const MouseEvent& e)
+{
+    const int type = jlimit (0, djfx::kNumFx - 1, (int) proc.apvts.getRawParameterValue (ids::fxType.getParamID())->load());
+    const auto p = e.position;
+    if (p.y >= 22 && p.y < 68)                                           // 左右のセルで前後の拍へ
+    {
+        if (p.x >= 150 && p.x < 230) stepBeat (-1);
+        else if (p.x >= 310 && p.x < 390) stepBeat (+1);
+    }
+    else if (p.y >= 76 && p.y < 104 && type != djfx::kReverb)            // 下の拍の一覧から直接選ぶ
+    {
+        const int n = djfx::beatListFor (type).n;
+        const float cw = (float) (getWidth() - 16) / (float) n;
+        setBeatIndex ((int) ((p.x - 8.f) / cw));
+    }
+}
+
 void FxDisplay::paint (Graphics& g)
 {
     auto& l = dynamic_cast<NamiLnF&> (getLookAndFeel());
@@ -314,7 +422,9 @@ void FxDisplay::paint (Graphics& g)
     const float norm = touch ? f (ids::xpadPos) : f (ids::fxBeat);
     const float bpm = proc.lastBpm.load();
     const auto list = djfx::beatListFor (type);
-    const double beats = std::fabs (list.v[djfx::beatIndex (type, norm)]);
+    const int idx = djfx::beatIndex (type, norm);
+    const double beats = std::fabs (list.v[idx]);
+    const bool reverb = type == djfx::kReverb;
     const double ms = sync ? beats * 60000.0 / bpm : (touch ? (double) djfx::expMap (jlimit (0.f, 1.f, f (ids::xpadPos)), 10.f, 4000.f) : (double) f (ids::fxTime));
 
     auto r = getLocalBounds().toFloat();
@@ -322,30 +432,131 @@ void FxDisplay::paint (Graphics& g)
     g.setColour (Colour (0xff02050d)); g.drawRoundedRectangle (r.reduced (0.5f), 3.f, 1.f);
     g.setColour (ui::padEdge); g.drawRoundedRectangle (r.reduced (1.5f), 2.f, 1.f);
 
-    const int x0 = 10, w = getWidth() - 20;
-    g.setFont (l.font (0.85f));
-    g.setColour (ui::dim);
-    g.drawText ("BEAT FX", x0, 6, 80, 14, Justification::left, false);
-    g.setColour (ui::amber);
-    g.drawText (String (bpm, 1) + " BPM", x0, 6, w, 14, Justification::right, false);
+    // 上段: 同期の表示とBPM
+    const Colour tagCol = sync ? ui::teal : ui::dim;
+    g.setColour (tagCol);
+    g.drawRoundedRectangle (8.f, 6.f, 46.f, 14.f, 2.f, 1.f);
+    g.setFont (l.font (0.8f));
+    g.drawText (sync ? "SYNC" : "FREE", 8, 6, 46, 14, Justification::centred, false);
+    g.setFont (l.fontBold (1.2f)); g.setColour (ui::text);
+    g.drawText (String (bpm, 1), getWidth() - 110, 4, 76, 18, Justification::right, false);
+    g.setFont (l.font (0.78f)); g.setColour (ui::dim);
+    g.drawText ("BPM", getWidth() - 32, 8, 26, 12, Justification::left, false);
 
-    g.setFont (l.fontBold (1.55f));
-    g.setColour (on ? ui::teal : ui::teal.withAlpha (0.45f));
-    g.drawText (djfx::fxName (type), x0, 22, w, 26, Justification::centred, false);
+    // 左: エフェクト名とTIME
+    g.setFont (l.fontBold (1.5f));
+    g.setColour (on ? ui::text : ui::text.withAlpha (0.55f));
+    g.drawText (djfx::fxName (type), 8, 24, 150, 26, Justification::left, false);
+    g.setFont (l.font (0.78f)); g.setColour (ui::dim);
+    g.drawText ("TIME", 8, 54, 36, 12, Justification::left, false);
+    g.setFont (l.fontBold (1.1f)); g.setColour (ui::text);
+    g.drawText (String ((int) std::lround (ms)), 40, 51, 52, 16, Justification::right, false);
+    g.setFont (l.font (0.78f)); g.setColour (ui::dim);
+    g.drawText ("msec", 96, 54, 40, 12, Justification::left, false);
 
-    g.setFont (l.font (0.9f)); g.setColour (ui::text.withAlpha (0.9f));
-    const String beatTxt = type == djfx::kReverb ? String (djfx::beatLabel (type, norm)) : String (djfx::beatLabel (type, norm));
-    g.drawText ((sync ? "BEAT " : "TIME ") + (sync ? beatTxt : String ((int) ms) + "ms"), x0, 50, w / 2, 14, Justification::left, false);
-    g.drawText (sync ? String ((int) ms) + "ms" : String ("FREE"), x0, 50, w, 14, Justification::right, false);
-
-    const float level = f (ids::fxLevel);                                           // レベルのセグメント表示
-    const int segs = 16, segW = (w - (segs - 1) * 2) / segs;
-    const int lit = (int) std::lround (level * segs);
-    for (int i = 0; i < segs; ++i)
+    // 右: 前の拍 / 今の拍 / 次の拍
+    auto cellText = [&] (int i) -> String
     {
-        g.setColour (i < lit ? (i >= segs - 3 ? ui::amber : ui::teal) : Colour (0xff111c36));
-        g.fillRect (x0 + i * (segW + 2), 68, segW, 7);
+        if (reverb) { const int pc = (int) std::lround (jlimit (0.f, 1.f, norm + 0.1f * (float) (i - idx)) * 99.f + 1.f); return String (pc) + "%"; }
+        if (i < 0 || i >= list.n) return {};
+        return String (list.label[i]);
+    };
+    const int curIdx = reverb ? 0 : idx;
+    const float dimA = sync || reverb ? 1.f : 0.4f;
+    for (int k = -1; k <= 1; ++k)
+    {
+        Rectangle<float> cell (150.f + (float) (k + 1) * 80.f, 22.f, 78.f, 46.f);
+        const String t = reverb ? cellText (curIdx + k) : cellText (curIdx + k);
+        if (t.isEmpty() && k != 0) { g.setColour (Colour (0xff0b1224)); g.fillRect (cell); continue; }
+        if (k == 0)
+        {
+            g.setColour (ui::text.withAlpha (dimA)); g.fillRect (cell);
+            g.setFont (l.fontBold (1.9f)); g.setColour (ui::ink);
+        }
+        else
+        {
+            g.setColour (Colour (0xff111b36)); g.fillRect (cell);
+            g.setFont (l.fontBold (1.5f)); g.setColour (ui::text.withAlpha (0.8f * dimA));
+        }
+        g.drawText (t, cell.toNearestInt(), Justification::centred, false);
     }
+
+    // 下段: 拍の一覧(選択中を白抜き)とBEATの帯
+    if (! reverb)
+    {
+        const float cw = (float) (getWidth() - 16) / (float) list.n;
+        g.setFont (l.font (0.82f));
+        for (int i = 0; i < list.n; ++i)
+        {
+            Rectangle<float> chip (8.f + cw * (float) i, 76.f, cw - 2.f, 22.f);
+            if (i == idx) { g.setColour (ui::text.withAlpha (dimA)); g.fillRect (chip); g.setColour (ui::ink); }
+            else { g.setColour (Colour (0xff0f1930)); g.fillRect (chip); g.setColour (ui::text.withAlpha (0.7f * dimA)); }
+            g.drawText (list.label[i], chip.toNearestInt(), Justification::centred, false);
+        }
+    }
+    g.setColour (ui::teal.withAlpha (on ? 1.f : 0.5f));
+    g.fillRect (8.f, 102.f, (float) getWidth() - 16.f, 6.f);
+}
+
+// ------------------------------------------------------------------ エフェクト選択ロータリー
+FxSelector::FxSelector (AudioProcessorValueTreeState& s) : apvts (s) {}
+
+float FxSelector::angleOf (int i) const   // 12時を0とした時計回りの角度。DELAYが左下、MOBIUSが右下
+{
+    return (-140.f + (float) i * (280.f / (float) (djfx::kNumFx - 1))) * MathConstants<float>::pi / 180.f;
+}
+Rectangle<float> FxSelector::labelRect (int i) const
+{
+    const float cx = (float) getWidth() * 0.5f, cy = (float) getHeight() * 0.5f;
+    const bool left = i < 7;
+    const int k = left ? i : i - 7;
+    const float dy = left ? 44.f - (float) k * 15.f : -46.f + (float) k * 15.f;
+    const float reach = 5.f + 40.f * std::sqrt (std::max (0.f, 1.f - (dy / 62.f) * (dy / 62.f)));
+    const float w = 104.f;
+    return left ? Rectangle<float> (cx - reach - w, cy + dy - 7.f, w, 14.f)
+                : Rectangle<float> (cx + reach, cy + dy - 7.f, w, 14.f);
+}
+void FxSelector::select (int i)
+{
+    setParamValue (apvts, ids::fxType, (float) jlimit (0, djfx::kNumFx - 1, i));
+    repaint();
+}
+void FxSelector::mouseDown (const MouseEvent& e)
+{
+    for (int i = 0; i < djfx::kNumFx; ++i)
+        if (labelRect (i).expanded (2.f).contains (e.position)) { select (i); return; }
+    dragStartIndex = (int) apvts.getRawParameterValue (ids::fxType.getParamID())->load();
+}
+void FxSelector::mouseDrag (const MouseEvent& e)                        // つまみを上下にドラッグして回す
+{
+    if (e.mouseDownPosition.getDistanceFrom ({ (float) getWidth() * 0.5f, (float) getHeight() * 0.5f }) < 30.f)
+        select (dragStartIndex - (int) std::lround ((float) e.getDistanceFromDragStartY() / 14.f));
+}
+void FxSelector::mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w)
+{
+    const int cur = (int) apvts.getRawParameterValue (ids::fxType.getParamID())->load();
+    select (cur + (w.deltaY > 0 ? -1 : 1));
+}
+void FxSelector::paint (Graphics& g)
+{
+    auto& l = dynamic_cast<NamiLnF&> (getLookAndFeel());
+    const int cur = jlimit (0, djfx::kNumFx - 1, (int) apvts.getRawParameterValue (ids::fxType.getParamID())->load());
+    const Point<float> c ((float) getWidth() * 0.5f, (float) getHeight() * 0.5f);
+
+    for (int i = 0; i < djfx::kNumFx; ++i)                              // つまみから各名前へ伸びる短い目盛り
+    {
+        const float a = angleOf (i);
+        g.setColour (i == cur ? ui::amber : ui::dim);
+        g.drawLine (c.x + std::sin (a) * 30.f, c.y - std::cos (a) * 30.f, c.x + std::sin (a) * 35.f, c.y - std::cos (a) * 35.f, i == cur ? 2.f : 1.f);
+    }
+    for (int i = 0; i < djfx::kNumFx; ++i)
+    {
+        const auto r = labelRect (i);
+        g.setFont (i == cur ? l.fontBold (0.92f) : l.font (0.92f));
+        g.setColour (i == cur ? ui::amber : ui::text.withAlpha (0.85f));
+        g.drawText (djfx::fxName (i), r.toNearestInt(), i < 7 ? Justification::centredRight : Justification::centredLeft, false);
+    }
+    drawCap (g, c, 23.f, angleOf (cur), true, false);
 }
 
 // ------------------------------------------------------------------ Editor
@@ -381,18 +592,16 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     setLookAndFeel (&lnf);
     auto& s = proc.apvts;
 
-    StringArray fxNames, colNames;
-    for (int i = 0; i < djfx::kNumFx; ++i) fxNames.add (djfx::fxName (i));
-    for (int i = 0; i < djfx::kNumColor; ++i) colNames.add (djfx::colorName (i));
+    StringArray colNames;
+    for (int i = 1; i < djfx::kNumColor; ++i) colNames.add (djfx::colorName (i));      // OFFは押し直しで切る
 
-    fxTypes = std::make_unique<ChoiceGroup> (s, ids::fxType, fxNames, 1, 2, true);
-    fxBands = std::make_unique<ChoiceGroup> (s, ids::fxBand, StringArray { "ALL", "LOW", "MID", "HI" }, 4, 4);
-    colorTypes = std::make_unique<ChoiceGroup> (s, ids::colorType, colNames, 1, 2, true);
+    fxSel = std::make_unique<FxSelector> (s);
+    colorTypes = std::make_unique<ChoiceGroup> (s, ids::colorType, colNames, 2, 4, false, 1, true);
     latency = std::make_unique<ChoiceGroup> (s, ids::jogLatency, StringArray { "0", "60", "125", "250", "500" }, 5, 3);
     xpad = std::make_unique<XPad> (s);
     jog = std::make_unique<JogWheel> (s);
     lcd = std::make_unique<FxDisplay> (proc);
-    for (auto* c : { (Component*) fxTypes.get(), (Component*) fxBands.get(), (Component*) colorTypes.get(), (Component*) latency.get(),
+    for (auto* c : { (Component*) fxSel.get(), (Component*) colorTypes.get(), (Component*) latency.get(),
                      (Component*) xpad.get(), (Component*) jog.get(), (Component*) lcd.get() })
         addAndMakeVisible (c);
 
@@ -400,32 +609,62 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     bOn->getProperties().set ("round", true);
     bSync = addToggle (ids::fxSync, "BPM SYNC");
     bLock = addToggle (ids::centerLock, "CENTER LOCK", ui::amber);
+    bLow = addToggle (ids::bandLow, "LOW");
+    bMid = addToggle (ids::bandMid, "MID");
+    bHi  = addToggle (ids::bandHi,  "HI");
+    for (auto* b : { bLow, bMid, bHi }) b->getProperties().set ("bold", true);
+
+    bPrev = new TextButton(); bNext = new TextButton(); bTap = new TextButton ("TAP");
+    for (auto* b : { bPrev, bNext, bTap }) { toggles.add (b); addAndMakeVisible (b); }
+    bPrev->getProperties().set ("arrow", -1); bNext->getProperties().set ("arrow", 1);
+    bPrev->getProperties().set ("bold", true); bNext->getProperties().set ("bold", true);
+    bTap->getProperties().set ("round", true);
+    bPrev->onClick = [this] { lcd->stepBeat (-1); };
+    bNext->onClick = [this] { lcd->stepBeat (+1); };
+    bTap->onClick = [this]                                              // タップテンポ(ホストのBPMが無いときの手入力BPMに入る)
+    {
+        const double now = Time::getMillisecondCounterHiRes();
+        if (! tapTimes.empty() && now - tapTimes.back() > 2000.0) tapTimes.clear();
+        tapTimes.push_back (now);
+        if (tapTimes.size() > 5) tapTimes.erase (tapTimes.begin());
+        if (tapTimes.size() >= 2)
+        {
+            const double avg = (tapTimes.back() - tapTimes.front()) / (double) (tapTimes.size() - 1);
+            setParamValue (proc.apvts, ids::bpm, (float) jlimit (30.0, 300.0, 60000.0 / avg));
+            setParamValue (proc.apvts, ids::fxSync, 1.f);
+        }
+    };
+
     hBack = addHold (ids::jogBackspin, "BACKSPIN");
     hBrake = addHold (ids::jogBrake, "BRAKE");
     hRev = addHold (ids::jogReverse, "REVERSE");
     hLoop = addHold (ids::jogLoop, "LOOP");
     for (auto* h : { hBack, hBrake, hRev, hLoop }) h->getProperties().set ("accent", (int) ui::amber.getARGB());
 
-    auto typeNow = [this] { return (int) raw (ids::fxType); };
-    kBeat = std::make_unique<Knob> (s, ids::fxBeat, "BEAT", [this, typeNow] { return String (djfx::beatLabel (typeNow(), raw (ids::fxBeat))); }, false, true);
-    kBeat->slider.stepCount = [this, typeNow] { return typeNow() == djfx::kReverb ? 0 : djfx::beatListFor (typeNow()).n; };
-    kTime = std::make_unique<Knob> (s, ids::fxTime, "TIME", [this] { return String ((int) raw (ids::fxTime)) + "ms"; });
-    kLevel = std::make_unique<Knob> (s, ids::fxLevel, "LEVEL/DEPTH", [this] { return pct (raw (ids::fxLevel)); });
-    kColor = std::make_unique<Knob> (s, ids::colorKnob, "COLOR", [this]
+    auto mk = [&] (const ParameterID& id, const String& name, std::function<String()> vt, const String& mn, const String& mx, bool bipolar = false, bool stepped = false, bool knurl = false)
+    {
+        auto k = std::make_unique<Knob> (s, id, name, std::move (vt), bipolar, stepped);
+        k->minLabel = mn; k->maxLabel = mx;
+        k->slider.getProperties().set ("knurl", knurl);
+        addAndMakeVisible (*k);
+        return k;
+    };
+    kTime = mk (ids::fxTime, "TIME", [this] { return String ((int) raw (ids::fxTime)) + "ms"; }, "1", "4000");
+    kTime->slider.onDragStart = [this] { setParamValue (proc.apvts, ids::fxSync, 0.f); };   // TIMEを回すと自由な時間(ms)になる
+    kLevel = mk (ids::fxLevel, "LEVEL/DEPTH", [this] { return pct (raw (ids::fxLevel)); }, "MIN", "MAX");
+    kColor = mk (ids::colorKnob, "COLOR", [this]
     {
         const float c = raw (ids::colorKnob);
         return std::fabs (c) < 0.02f ? String ("CENTER") : String (c < 0 ? "L " : "R ") + String ((int) std::lround (std::fabs (c) * 100.f));
-    }, true);
-    kParam = std::make_unique<Knob> (s, ids::colorParam, "PARAMETER", [this] { return pct (raw (ids::colorParam)); });
-    kBs = std::make_unique<Knob> (s, ids::bsTime, "SPIN TIME", [this] { return String ((int) raw (ids::bsTime)) + "ms"; });
-    kRate = std::make_unique<Knob> (s, ids::bsRate, "SPIN RATE", [this] { return "x" + String (raw (ids::bsRate), 1); });
-    kBrake = std::make_unique<Knob> (s, ids::brakeTime, "BRAKE TIME", [this] { return String ((int) raw (ids::brakeTime)) + "ms"; });
-    kLoop = std::make_unique<Knob> (s, ids::loopBeat, "LOOP BEAT", [this] { return String (djfx::beatLabel (djfx::kEcho, raw (ids::loopBeat))); }, false, true);
+    }, "LOW", "HI", true, false, true);
+    kParam = mk (ids::colorParam, "PARAMETER", [this] { return pct (raw (ids::colorParam)); }, "MIN", "MAX");
+    kBs = mk (ids::bsTime, "SPIN TIME", [this] { return String ((int) raw (ids::bsTime)) + "ms"; }, "0.2s", "4s");
+    kRate = mk (ids::bsRate, "SPIN RATE", [this] { return "x" + String (raw (ids::bsRate), 1); }, "x1", "x10");
+    kBrake = mk (ids::brakeTime, "BRAKE TIME", [this] { return String ((int) raw (ids::brakeTime)) + "ms"; }, "50", "5s");
+    kLoop = mk (ids::loopBeat, "LOOP BEAT", [this] { return String (djfx::beatLabel (djfx::kEcho, raw (ids::loopBeat))); }, "1/16", "16", false, true);
     kLoop->slider.stepCount = [] { return djfx::beatListFor (djfx::kEcho).n; };
-    kBpm = std::make_unique<Knob> (s, ids::bpm, "BPM (NO HOST)", [this] { return String ((int) raw (ids::bpm)); });
-    kOut = std::make_unique<Knob> (s, ids::outGain, "OUT", [this] { return String (raw (ids::outGain), 1) + "dB"; });
-    for (auto* k : { kBeat.get(), kTime.get(), kLevel.get(), kColor.get(), kParam.get(), kBs.get(), kRate.get(), kBrake.get(), kLoop.get(), kBpm.get(), kOut.get() })
-        addAndMakeVisible (k);
+    kBpm = mk (ids::bpm, "BPM (NO HOST)", [this] { return String ((int) raw (ids::bpm)); }, "30", "300");
+    kOut = mk (ids::outGain, "OUT", [this] { return String (raw (ids::outGain), 1) + "dB"; }, "-24", "+6");
 
     setSize (1000, 640);
     startTimerHz (30);
@@ -435,10 +674,10 @@ NamiDJFXEditor::~NamiDJFXEditor() { setLookAndFeel (nullptr); }
 void NamiDJFXEditor::timerCallback()
 {
     const bool sync = raw (ids::fxSync) > 0.5f;
-    kBeat->slider.setAlpha (sync ? 1.f : 0.35f);
-    kTime->slider.setAlpha (sync ? 0.35f : 1.f);
-    for (auto* k : { kBeat.get(), kTime.get(), kLevel.get(), kColor.get(), kParam.get(), kBs.get(), kRate.get(), kBrake.get(), kLoop.get(), kBpm.get(), kOut.get() })
+    kTime->slider.setAlpha (sync ? 0.55f : 1.f);
+    for (auto* k : { kTime.get(), kLevel.get(), kColor.get(), kParam.get(), kBs.get(), kRate.get(), kBrake.get(), kLoop.get(), kBpm.get(), kOut.get() })
         k->repaint();
+    fxSel->repaint();
     hBack->setToggleState (raw (ids::jogBackspin) > 0.5f, dontSendNotification);
     hBrake->setToggleState (raw (ids::jogBrake) > 0.5f, dontSendNotification);
     hRev->setToggleState (raw (ids::jogReverse) > 0.5f, dontSendNotification);
@@ -509,9 +748,13 @@ void NamiDJFXEditor::paint (Graphics& g)
     sectionHeader (g, boxB, "SOUND COLOR FX");
     sectionHeader (g, boxC, "JOG");
 
-    g.setFont (lnf.font (0.85f)); g.setColour (ui::dim);
-    g.drawText ("BAND", boxA.getX() + 212, boxA.getY() + 310, 80, 14, Justification::left, false);
+    g.setFont (lnf.font (0.9f)); g.setColour (ui::text);
+    g.drawText ("FX FREQUENCY", boxA.getX() + 8, boxA.getY() + 229, boxA.getWidth() - 16, 14, Justification::centred, false);
+    g.setColour (ui::text.withAlpha (0.85f));
+    g.drawText ("BEAT", boxA.getX() + 8, boxA.getY() + 153, boxA.getWidth() - 16, 14, Justification::centred, false);
+    g.setColour (ui::dim); g.setFont (lnf.font (0.85f));
     g.drawText ("LOOKAHEAD ms", boxC.getX() + 8, boxC.getY() + 406, 160, 14, Justification::left, false);
+    for (int dx : { 0, 1 }) { g.setColour (dx ? Colour (0x22ffffff) : ui::line); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getX() + 8.f, (float) boxA.getCentreX() - 28.f); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getCentreX() + 28.f, (float) boxA.getRight() - 8.f); }
 
     for (auto pt : { Point<float> (18.f, 19.f), Point<float> ((float) getWidth() - 18.f, 19.f),
                      Point<float> (18.f, (float) getHeight() - 18.f), Point<float> ((float) getWidth() - 18.f, (float) getHeight() - 18.f) })
@@ -530,22 +773,26 @@ void NamiDJFXEditor::resized()
     boxC = { 650, 46, 342, 546 };
     auto at = [] (Rectangle<int> b, int x, int y, int w, int h) { return Rectangle<int> (b.getX() + x, b.getY() + y, w, h); };
 
-    // BEAT FX
-    fxTypes->setBounds (at (boxA, 8, 30, 192, 14 * 22 + 13 * 2));
-    lcd->setBounds (at (boxA, 212, 30, 192, 84));
-    xpad->setBounds (at (boxA, 212, 122, 192, 100));
-    bOn->setBounds (at (boxA, 212 + 64, 234, 64, 64));
-    fxBands->setBounds (at (boxA, 212, 326, 192, 26));
-    bSync->setBounds (at (boxA, 212, 360, 192, 26));
-    kBeat->setBounds (at (boxA, 8, 400, 124, 128));
-    kTime->setBounds (at (boxA, 144, 400, 124, 128));
-    kLevel->setBounds (at (boxA, 280, 400, 124, 128));
+    // BEAT FX(実機の並び: 液晶 → BEAT ◀▶ → TAP → FX FREQUENCY → 選択ロータリー → X-PAD → TIME / ON-OFF / LEVEL)
+    lcd->setBounds (at (boxA, 8, 28, 396, 112));
+    bPrev->setBounds (at (boxA, 8, 148, 120, 24));
+    bNext->setBounds (at (boxA, 284, 148, 120, 24));
+    bSync->setBounds (at (boxA, 8, 188, 104, 26));
+    bTap->setBounds (at (boxA, 206 - 22, 178, 44, 44));
+    bLow->setBounds (at (boxA, 44, 246, 96, 26));
+    bMid->setBounds (at (boxA, 158, 246, 96, 26));
+    bHi->setBounds (at (boxA, 272, 246, 96, 26));
+    fxSel->setBounds (at (boxA, 8, 274, 396, 118));
+    xpad->setBounds (at (boxA, 8, 398, 396, 28));
+    kTime->setBounds (at (boxA, 8, 432, 124, 112));
+    bOn->setBounds (at (boxA, 206 - 32, 456, 64, 64));
+    kLevel->setBounds (at (boxA, 280, 432, 124, 112));
 
     // SOUND COLOR FX
-    colorTypes->setBounds (at (boxB, 6, 30, 196, 7 * 24 + 6 * 2));
-    kColor->setBounds (at (boxB, 26, 224, 156, 150));
-    kParam->setBounds (at (boxB, 52, 384, 104, 112));
-    bLock->setBounds (at (boxB, 6, 508, 196, 28));
+    colorTypes->setBounds (at (boxB, 6, 30, 196, 3 * 30 + 2 * 4));
+    kColor->setBounds (at (boxB, 14, 150, 180, 190));
+    kParam->setBounds (at (boxB, 40, 352, 128, 130));
+    bLock->setBounds (at (boxB, 6, 500, 196, 28));
 
     // JOG
     jog->setBounds (at (boxC, 61, 28, 220, 220));
@@ -553,11 +800,11 @@ void NamiDJFXEditor::resized()
     hBrake->setBounds (at (boxC, 90, 262, 80, 34));
     hRev->setBounds (at (boxC, 174, 262, 80, 34));
     hLoop->setBounds (at (boxC, 258, 262, 78, 34));
-    kBs->setBounds (at (boxC, 6, 308, 80, 96 - 4));
-    kRate->setBounds (at (boxC, 90, 308, 80, 96 - 4));
-    kBrake->setBounds (at (boxC, 174, 308, 80, 96 - 4));
-    kLoop->setBounds (at (boxC, 258, 308, 78, 96 - 4));
+    kBs->setBounds (at (boxC, 6, 304, 80, 98));
+    kRate->setBounds (at (boxC, 90, 304, 80, 98));
+    kBrake->setBounds (at (boxC, 174, 304, 80, 98));
+    kLoop->setBounds (at (boxC, 258, 304, 78, 98));
     latency->setBounds (at (boxC, 6, 424, 330, 26));
-    kBpm->setBounds (at (boxC, 50, 456, 110, 86));
-    kOut->setBounds (at (boxC, 182, 456, 110, 86));
+    kBpm->setBounds (at (boxC, 40, 458, 120, 84));
+    kOut->setBounds (at (boxC, 182, 458, 120, 84));
 }
