@@ -28,6 +28,7 @@ public:
     void setStateInformation (const void*, int) override;
 
     juce::AudioProcessorValueTreeState apvts;
+    std::atomic<float> jogLagMs { 0.f };    // 画面表示用(SLIP OFFでライブより遅れている長さ)
     std::atomic<float> lastBpm { 120.f };   // 画面表示用(ホストのBPM。不明なら手入力BPM)
 
 private:

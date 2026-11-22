@@ -699,6 +699,13 @@ TextButton* NamiDJFXEditor::addToggle (const ParameterID& id, const String& labe
     addAndMakeVisible (b);
     return b;
 }
+TextButton* NamiDJFXEditor::addAction (const String& label, std::function<void()> onClick)
+{
+    auto* b = toggles.add (new TextButton (label));
+    b->onClick = std::move (onClick);
+    addAndMakeVisible (b);
+    return b;
+}
 HoldButton* NamiDJFXEditor::addHold (const ParameterID& id, const String& label)
 {
     auto* b = holds.add (new HoldButton());
@@ -772,6 +779,8 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     hBrake = addHold (ids::jogBrake, "BRAKE");
     hRev = addHold (ids::jogReverse, "REVERSE");
     hLoop = addHold (ids::jogLoop, "LOOP");
+    hLive = addHold (ids::jogResync, "RESYNC");
+    hLive->getProperties().set ("accent", (int) ui::teal.getARGB());
     for (auto* h : { hBack, hBrake, hRev, hLoop }) h->getProperties().set ("accent", (int) ui::amber.getARGB());
 
     auto mk = [&] (const ParameterID& id, const String& name, std::function<String()> vt, const String& mn, const String& mx, bool bipolar = false, bool stepped = false, bool knurl = false)
@@ -795,6 +804,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     kParam = mk (ids::colorParam, "PARAMETER", [this] { return pct (raw (ids::colorParam)); }, "MIN", "MAX");
     kBs = mk (ids::bsTime, "SPIN TIME", [this] { return String ((int) raw (ids::bsTime)) + "ms"; }, "0.2s", "4s");
     kRate = mk (ids::bsRate, "SPIN RATE", [this] { return "x" + String (raw (ids::bsRate), 1); }, "x1", "x10");
+    kRelease = mk (ids::releaseTime, "RELEASE", [this] { return String ((int) raw (ids::releaseTime)) + "ms"; }, "50", "5s");
     kBrake = mk (ids::brakeTime, "BRAKE TIME", [this] { return String ((int) raw (ids::brakeTime)) + "ms"; }, "50", "5s");
     kLoop = mk (ids::loopBeat, "LOOP BEAT", [this] { return String (djfx::beatLabel (djfx::kEcho, raw (ids::loopBeat))); }, "1/16", "16", false, true);
     kLoop->slider.stepCount = [] { return djfx::beatListFor (djfx::kEcho).n; };
@@ -833,6 +843,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
         };
     };
     noteMenu (*kBs, ids::bsTime, ids::bsBeat);
+    noteMenu (*kRelease, ids::releaseTime, ids::releaseBeat);
     noteMenu (*kBrake, ids::brakeTime, ids::brakeBeat);
 
     // BEAT FX の TIME: 欄で ms を打てる / 右クリックで拍を選ぶ(BEATボタンと同じく拍同期になる)
@@ -861,6 +872,24 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     kBpm->makeEditable ("", [this] { return String ((int) std::lround (raw (ids::bpm))); },
                         [this] (double v) { setParamValue (proc.apvts, ids::bpm, (float) jlimit (30.0, 300.0, v)); });
 
+    // ---- ループ操作(1/2X・2X・RELOOP/EXIT)、SLIP、QUANTIZE
+    auto stepLoop = [this] (double mul)
+    {
+        const auto list = djfx::beatListFor (djfx::kEcho);
+        const int cur = djfx::beatIndex (djfx::kEcho, raw (ids::loopBeat));
+        const double target = list.v[cur] * mul;
+        int best = cur; double bd = 1e9;
+        for (int i = 0; i < list.n; ++i) { const double d = std::fabs (std::log (list.v[i] / target)); if (d < bd) { bd = d; best = i; } }
+        setParamValue (proc.apvts, ids::loopBeat, djfx::beatNormFromIndex (djfx::kEcho, best));
+    };
+    bHalf = addAction ("1/2X", [stepLoop] { stepLoop (0.5); });
+    bDouble = addAction ("2X", [stepLoop] { stepLoop (2.0); });
+    bReloop = addToggle (ids::loopLatch, "RELOOP / EXIT", ui::amber);
+    tSlip = addToggle (ids::slip, "SLIP", ui::amber);
+    tQuant = addToggle (ids::quantize, "QUANTIZE", ui::amber);
+    quantBeats = std::make_unique<ChoiceGroup> (proc.apvts, ids::quantBeat, StringArray { "1/8", "1/4", "1/2", "1" }, 4, 3);
+    addAndMakeVisible (*quantBeats);
+
     setSize (1000, 640);
     startTimerHz (30);
 }
@@ -870,13 +899,16 @@ void NamiDJFXEditor::timerCallback()
 {
     const bool sync = raw (ids::fxSync) > 0.5f;
     kTime->slider.setAlpha (sync ? 0.55f : 1.f);
-    for (auto* k : { kTime.get(), kLevel.get(), kColor.get(), kParam.get(), kBs.get(), kRate.get(), kBrake.get(), kLoop.get(), kBpm.get(), kOut.get() })
+    for (auto* k : { kTime.get(), kLevel.get(), kColor.get(), kParam.get(), kBs.get(), kRate.get(), kBrake.get(), kRelease.get(), kLoop.get(), kBpm.get(), kOut.get() })
         k->repaint();
     fxSel->repaint();
     hBack->setToggleState (raw (ids::jogBackspin) > 0.5f, dontSendNotification);
     hBrake->setToggleState (raw (ids::jogBrake) > 0.5f, dontSendNotification);
     hRev->setToggleState (raw (ids::jogReverse) > 0.5f, dontSendNotification);
     hLoop->setToggleState (raw (ids::jogLoop) > 0.5f, dontSendNotification);
+    hLive->setToggleState (raw (ids::jogResync) > 0.5f, dontSendNotification);
+    quantBeats->setAlpha (raw (ids::quantize) > 0.5f ? 1.f : 0.5f);
+    repaint (boxC.withTrimmedTop (400));      // 遅れ表示
 }
 
 // 面板の金属テクスチャ(粒状のノイズ + 横方向のヘアライン)。毎回同じ模様になるよう乱数は固定。
@@ -930,7 +962,7 @@ void NamiDJFXEditor::paint (Graphics& g)
     g.setFont (lnf.fontBold (1.5f));
     g.drawText ("DJFX Standard", 40, 5, 320, 28, Justification::left, false);
     g.setFont (lnf.font (0.85f)); g.setColour (ui::dim);
-    g.drawText ("MIDI  C1 BACKSPIN / C#1 BRAKE / D1 REVERSE / D#1 SCRATCH / E1 LOOP / F1 BEAT FX", 330, 12, 630, 14, Justification::right, false);
+    g.drawText ("MIDI  C1 BACKSPIN / C#1 BRAKE / D1 REVERSE / D#1 SCRATCH / E1 LOOP / F1 BEAT FX / F#1 RESYNC", 330, 12, 630, 14, Justification::right, false);
     g.drawText ("BEAT FX x14   SOUND COLOR FX x6   JOG", 40, getHeight() - 26, 500, 14, Justification::left, false);
     g.drawText ("DJFX-STD", getWidth() - 140, getHeight() - 26, 100, 14, Justification::right, false);
 
@@ -948,7 +980,18 @@ void NamiDJFXEditor::paint (Graphics& g)
     g.setColour (ui::text.withAlpha (0.85f));
     g.drawText ("BEAT", boxA.getX() + 8, boxA.getY() + 153, boxA.getWidth() - 16, 14, Justification::centred, false);
     g.setColour (ui::dim); g.setFont (lnf.font (0.85f));
-    g.drawText ("LOOKAHEAD ms", boxC.getX() + 8, boxC.getY() + 406, 160, 14, Justification::left, false);
+    g.drawText ("LOOKAHEAD ms", boxC.getX() + 8, boxC.getY() + 497, 160, 14, Justification::left, false);
+    {   // SLIP OFFでライブより遅れている長さ(DAWの拍に直して表示)
+        const float lagMs = proc.jogLagMs.load();
+        const double beatMs = 60000.0 / std::max (30.f, proc.lastBpm.load());
+        const int lx = boxC.getX() + 258, ly = boxC.getY() + 442;
+        g.setColour (ui::dim); g.setFont (lnf.font (0.75f));
+        g.drawText ("LAG", lx, ly, 78, 12, Justification::centred, false);
+        g.setFont (lnf.font (0.95f)); g.setColour (lagMs < 1.f ? ui::dim : ui::amber);
+        g.drawText (lagMs < 1.f ? String ("LIVE") : String ((int) lagMs) + " ms", lx, ly + 12, 78, 15, Justification::centred, false);
+        g.setFont (lnf.font (0.75f)); g.setColour (ui::dim);
+        g.drawText (lagMs < 1.f ? String() : String (lagMs / beatMs, 2) + " beat", lx, ly + 28, 78, 12, Justification::centred, false);
+    }
     for (int dx : { 0, 1 }) { g.setColour (dx ? Colour (0x22ffffff) : ui::line); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getX() + 8.f, (float) boxA.getCentreX() - 28.f); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getCentreX() + 28.f, (float) boxA.getRight() - 8.f); }
 
     for (auto pt : { Point<float> (18.f, 19.f), Point<float> ((float) getWidth() - 18.f, 19.f),
@@ -990,16 +1033,24 @@ void NamiDJFXEditor::resized()
     bLock->setBounds (at (boxB, 6, 500, 196, 28));
 
     // JOG
-    jog->setBounds (at (boxC, 61, 28, 220, 220));
-    hBack->setBounds (at (boxC, 6, 262, 80, 34));
-    hBrake->setBounds (at (boxC, 90, 262, 80, 34));
-    hRev->setBounds (at (boxC, 174, 262, 80, 34));
-    hLoop->setBounds (at (boxC, 258, 262, 78, 34));
-    kBs->setBounds (at (boxC, 6, 304, 80, 98));
-    kRate->setBounds (at (boxC, 90, 304, 80, 98));
-    kBrake->setBounds (at (boxC, 174, 304, 80, 98));
-    kLoop->setBounds (at (boxC, 258, 304, 78, 98));
-    latency->setBounds (at (boxC, 6, 424, 330, 26));
-    kBpm->setBounds (at (boxC, 40, 458, 120, 84));
-    kOut->setBounds (at (boxC, 182, 458, 120, 84));
+    jog->setBounds (at (boxC, 76, 26, 190, 190));
+    hBack->setBounds (at (boxC, 6, 222, 80, 28));
+    hBrake->setBounds (at (boxC, 90, 222, 80, 28));
+    hRev->setBounds (at (boxC, 174, 222, 80, 28));
+    hLoop->setBounds (at (boxC, 258, 222, 78, 28));
+    bHalf->setBounds (at (boxC, 6, 254, 80, 22));
+    bDouble->setBounds (at (boxC, 90, 254, 80, 22));
+    bReloop->setBounds (at (boxC, 174, 254, 162, 22));
+    tSlip->setBounds (at (boxC, 6, 280, 80, 22));
+    tQuant->setBounds (at (boxC, 90, 280, 80, 22));
+    quantBeats->setBounds (at (boxC, 174, 280, 162, 22));
+    kBs->setBounds (at (boxC, 6, 308, 80, 98));
+    kRate->setBounds (at (boxC, 90, 308, 80, 98));
+    kBrake->setBounds (at (boxC, 174, 308, 80, 98));
+    kRelease->setBounds (at (boxC, 258, 308, 80, 98));
+    kLoop->setBounds (at (boxC, 6, 410, 80, 84));
+    kBpm->setBounds (at (boxC, 90, 410, 80, 84));
+    kOut->setBounds (at (boxC, 174, 410, 80, 84));
+    hLive->setBounds (at (boxC, 262, 414, 70, 24));
+    latency->setBounds (at (boxC, 6, 512, 330, 26));
 }

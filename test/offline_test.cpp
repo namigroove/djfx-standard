@@ -55,6 +55,37 @@ static double zeroCrossRate (const std::vector<float>& a, int from, int to)
     return z / ((to - from) / SR) / 2.0; // Hz相当
 }
 
+
+// 出力と入力の相関が最大になる遅れ(サンプル)を探す
+static int bestLag (const std::vector<float>& in, const std::vector<float>& out, int at, int win, int maxLag, double* corr = nullptr)
+{
+    double eo = 0; for (int i = 0; i < win; ++i) eo += (double) out[(size_t) (at + i)] * out[(size_t) (at + i)];
+    double best = -1e9; int bl = 0;
+    for (int lag = 0; lag <= maxLag && at - lag >= 0; ++lag)
+    {
+        double c = 0, ei = 0;
+        for (int i = 0; i < win; ++i) { const double x = in[(size_t) (at + i - lag)]; c += (double) out[(size_t) (at + i)] * x; ei += x * x; }
+        const double r = c / std::sqrt(eo * ei + 1e-30);
+        if (r > best) { best = r; bl = lag; }
+    }
+    if (corr) *corr = best;
+    return bl;
+}
+// 信号a(at位置)と信号b(at位置)を、bをずらして比べたときの最大相関
+static double bestShiftCorr (const std::vector<float>& a, int atA, const std::vector<float>& b, int atB, int win, int maxShift)
+{
+    double ea = 0; for (int i = 0; i < win; ++i) ea += (double) a[(size_t) (atA + i)] * a[(size_t) (atA + i)];
+    double best = -1e9;
+    for (int sh = 0; sh < maxShift; ++sh)
+    {
+        double c = 0, eb = 0;
+        for (int i = 0; i < win; ++i) { const double y = b[(size_t) (atB + sh + i)]; c += (double) a[(size_t) (atA + i)] * y; eb += y * y; }
+        best = std::max (best, c / std::sqrt (ea * eb + 1e-30));
+    }
+    return best;
+}
+static std::vector<float> noiseSig (int n, float amp = 0.3f) { std::vector<float> v ((size_t) n); Rng r; for (auto& x : v) x = amp * r.white(); return v; }
+
 int main()
 {
     _MM_SET_FLUSH_ZERO_MODE (_MM_FLUSH_ZERO_ON);
@@ -325,6 +356,150 @@ int main()
         CHECK (d < 1e-4, "block size dependence");
     }
 
+
+    // ---------------------------------------------------------------- 新機能: RELEASE / SLIP / QUANTIZE / ループ操作 / DAW連動
+    std::printf("[15] RELEASE: 止めた盤を放すと、設定時間で等速まで立ち上がる(周波数が上がっていく)\n");
+    {
+        const int len = (int) (SR * 8), tOn = 94 * 512, tOff = 282 * 512;
+        std::vector<float> L ((size_t) len), R;
+        for (int i = 0; i < len; ++i) L[(size_t) i] = 0.5f * (float) std::sin (2 * kPi * 1000.0 * i / SR);
+        R = L;
+        Params off; off.brakeTimeMs = 500; off.releaseTimeMs = 400; off.slip = false;
+        Params on = off; on.jogBrake = true;
+        Engine e; e.prepare (SR);
+        run (e, L, R, off, host, 512, new std::vector<std::pair<int, Params>> { { tOn, on }, { tOff, off } });
+        const double early = zeroCrossRate (L, tOff, tOff + 4800), late = zeroCrossRate (L, tOff + (int) (0.6 * SR), tOff + (int) (0.9 * SR));
+        const double held = stat (L, tOff - 9600, tOff).rms;
+        std::printf("  止めている間 rms=%.4f / 放した直後100ms=%.0fHz / 0.6〜0.9秒後=%.0fHz\n", held, early, late);
+        CHECK (held < 0.01, "brake hold not silent"); CHECK (early < late * 0.5, "no spin-up"); CHECK (std::fabs (late - 1000.0) < 60.0, "does not reach normal speed");
+    }
+
+    std::printf("[16] SLIP: OFFは離した位置から続ける(遅れが残る・式どおり) / ONはライブへ戻る\n");
+    {
+        const int len = (int) (SR * 8), tOn = 94 * 512, tOff = 282 * 512;
+        auto in = noiseSig (len);
+        Params base; base.brakeTimeMs = 500; base.releaseTimeMs = 400;
+        for (int slip = 0; slip < 2; ++slip)
+        {
+            auto L = in, R = in; Params off = base, on = base; off.slip = on.slip = slip != 0; on.jogBrake = true;
+            Engine e; e.prepare (SR);
+            run (e, L, R, off, host, 512, new std::vector<std::pair<int, Params>> { { tOn, on }, { tOff, off } });
+            if (! slip)
+            {
+                const double hold = tOff - tOn, T = 0.5 * SR, relT = 0.4 * SR;
+                const double expect = hold - 0.4 * T + 0.4 * relT;
+                double c; const int lag = bestLag (in, L, tOff + (int) (0.9 * SR), 2048, (int) (3 * SR), &c);
+                std::printf("  SLIP OFF: 遅れ=%d サンプル(式では%.0f) corr=%.3f\n", lag, expect, c);
+                CHECK (std::fabs (lag - expect) < 80, "lag %d vs %.0f", lag, expect); CHECK (c > 0.95, "lag corr");
+            }
+            else
+            {
+                double d = 0; for (int i = tOff + (int) (1.0 * SR); i < tOff + (int) (2.0 * SR); ++i) d = std::max (d, (double) std::fabs (L[(size_t) i] - in[(size_t) i]));
+                std::printf("  SLIP ON : 放して1秒後の入力との差 = %g\n", d);
+                CHECK (d < 1e-4, "slip on did not return to live");
+            }
+        }
+    }
+
+    std::printf("[17] QUANTIZE: 開始がDAWの拍の頭までちょうど待たされる / SLIP OFFの遅れが拍の整数倍に揃う\n");
+    {
+        const int len = (int) (SR * 8), tOn = 94 * 512;
+        auto in = noiseSig (len);
+        for (int q = 0; q < 2; ++q)
+        {
+            auto L = in, R = in; Params off; off.backspinTimeMs = 1200; off.quantize = q != 0; off.quantBeats = 1.f;
+            Params on = off; on.jogBackspin = true;
+            Engine e; e.prepare (SR);
+            run (e, L, R, off, host, 512, new std::vector<std::pair<int, Params>> { { tOn, on } });
+            int first = -1; for (int i = 0; i < len; ++i) if (std::fabs (L[(size_t) i] - in[(size_t) i]) > 1e-7f) { first = i; break; }
+            const int expect = q ? 72000 : tOn;   // tOnは2.0027拍。次の拍の頭は3.0拍=72000サンプル
+            std::printf("  QUANTIZE %s: 効きはじめ=%d (期待 %d)\n", q ? "ON " : "OFF", first, expect);
+            CHECK (first >= expect && first <= expect + 1, "onset %d vs %d", first, expect);
+        }
+        // 遅れの拍揃え: 72000(3拍)で押して、放した位置から続ける
+        Params off; off.brakeTimeMs = 500; off.releaseTimeMs = 400; off.slip = false; off.quantize = true; off.quantBeats = 1.f;
+        Params on = off; on.jogBrake = true;
+        auto L = in, R = in; Engine e; e.prepare (SR);
+        run (e, L, R, off, host, 512, new std::vector<std::pair<int, Params>> { { tOn, on }, { 282 * 512, off } });
+        double c; const int lag = bestLag (in, L, 282 * 512 + (int) (1.2 * SR), 2048, (int) (3 * SR), &c);
+        std::printf("  SLIP OFF + QUANTIZE: 遅れ=%d (1拍=24000の整数倍) corr=%.3f\n", lag, c);
+        CHECK (std::abs (lag % 24000) <= 4 || std::abs (lag % 24000 - 24000) <= 4, "lag not on beat: %d", lag); CHECK (c > 0.9, "lag corr %.2f", c);
+    }
+
+    std::printf("[18] ループ: 1/2Xで長さが半分になる / EXITで抜けてライブへ / RELOOPで直前と同じ区間に入り直す\n");
+    {
+        const int len = (int) (SR * 8);
+        auto in = noiseSig (len); auto L = in, R = in;
+        Params base; base.loopBeat = beatNormFromIndex (kEcho, 5);     // 1拍(120BPMで24000サンプル)
+        Params a = base; a.loopLatch = true;
+        Params half = a; half.loopBeat = beatNormFromIndex (kEcho, 3); // 1/2拍(12000)
+        Params ex = base; ex.loopBeat = half.loopBeat;
+        Params again = ex; again.loopLatch = true;
+        Engine e; e.prepare (SR);
+        const int t1 = 94 * 512, t2 = 282 * 512, t3 = 375 * 512, t4 = 422 * 512;
+        run (e, L, R, base, host, 512, new std::vector<std::pair<int, Params>> { { t1, a }, { t2, half }, { t3, ex }, { t4, again } });
+        const int w = 2048, at1 = (int) (2.5 * SR), at2 = (int) (3.6 * SR);
+        auto corrAt = [&] (int at, int lag) { double c = 0, e1 = 0, e2 = 0; for (int i = 0; i < w; ++i) { double x = L[(size_t) (at + i)], y = L[(size_t) (at + i - lag)]; c += x * y; e1 += x * x; e2 += y * y; } return c / std::sqrt (e1 * e2 + 1e-30); };
+        const double c24 = corrAt (at1, 24000), c12 = corrAt (at1, 12000), d12 = corrAt (at2, 12000);
+        std::printf("  1拍ループ中: 周期24000の相関=%.3f 12000の相関=%.3f / 1/2X後: 周期12000の相関=%.3f\n", c24, c12, d12);
+        CHECK (c24 > 0.98 && std::fabs (c12) < 0.3, "1beat loop"); CHECK (d12 > 0.98, "half loop");
+        double d = 0; for (int i = t3 + (int) (0.3 * SR); i < t3 + (int) (0.5 * SR); ++i) d = std::max (d, (double) std::fabs (L[(size_t) i] - in[(size_t) i]));
+        std::printf("  EXIT後: 入力との差=%g\n", d); CHECK (d < 1e-4, "exit did not return to live");
+        const double rc = bestShiftCorr (L, at2, L, (int) (6.0 * SR), w, 12000);
+        std::printf("  RELOOP: 最初の1/2Xループと同じ区間か(相関)=%.3f\n", rc); CHECK (rc > 0.98, "reloop segment differs");
+    }
+
+    std::printf("[19] DAW連動: 停止/シークで遅れを捨てる、シーク前の録音は巻き戻しに使わない\n");
+    {
+        const int blk = 512; const int total = 40; Engine e; e.prepare (SR);
+        Params off; off.slip = false; off.brakeTimeMs = 300; off.releaseTimeMs = 200;
+        auto feed = [&] (int blocks, double ppq0, const Params& p, bool silent)
+        {
+            std::vector<float> L, R;
+            for (int b = 0; b < blocks; ++b)
+            {
+                L = silent ? std::vector<float> ((size_t) blk, 0.f) : noiseSig (blk, 0.5f); R = L; HostInfo h = host; h.ppq = ppq0 + b * blk * 2.0 / SR;
+                e.process (L.data(), R.data(), blk, p, h, 0);
+            }
+            return L;
+        };
+        Params on = off; on.jogBrake = true;
+        feed (total, 0.0, off, false); feed (total, total * blk * 2.0 / SR, on, false);
+        const double ppqAfter = 2 * total * blk * 2.0 / SR;
+        feed (60, ppqAfter, off, false);
+        const double lagBefore = e.jogLagSamples();
+        std::printf("  シーク前: 遅れ=%.0fサンプル engaged=%d\n", lagBefore, (int) e.jogEngaged());
+        CHECK (lagBefore > 1000 && e.jogEngaged(), "no lag to test");
+        feed (1, ppqAfter + 500.0, off, true);                              // DAWがシークした
+        std::printf("  シーク後: 遅れ=%.0f engaged=%d\n", e.jogLagSamples(), (int) e.jogEngaged());
+        CHECK (! e.jogEngaged() && e.jogLagSamples() == 0.0, "lag not cleared on seek");
+        Params bs = off; bs.jogBackspin = true; bs.backspinRate = 5.f;
+        feed (4, ppqAfter + 500.0 + 0.1, off, true);                        // シーク後は無音を少し流す
+        auto out = feed (8, ppqAfter + 500.2, bs, true);                    // 巻き戻す: シーク前の音(うるさい)を拾ってはいけない
+        const double r = stat (out, 0, blk).rms;
+        std::printf("  シーク後の巻き戻し出力 rms=%.5f (シーク前の音は拾わない)\n", r);
+        CHECK (r < 0.01, "backspin read pre-seek audio");
+        // 対照: シークしなければ、同じ操作で巻き戻した先の音が出る(上の無音がたまたまでない証拠)
+        Engine e2; e2.prepare (SR);
+        auto feed2 = [&] (int blocks, double ppq0, const Params& p, bool silent)
+        {
+            std::vector<float> L, R;
+            for (int b = 0; b < blocks; ++b)
+            {
+                L = silent ? std::vector<float> ((size_t) blk, 0.f) : noiseSig (blk, 0.5f); R = L; HostInfo h = host; h.ppq = ppq0 + b * blk * 2.0 / SR;
+                e2.process (L.data(), R.data(), blk, p, h, 0);
+            }
+            return L;
+        };
+        feed2 (total, 0.0, off, false);
+        const double pp = total * blk * 2.0 / SR;
+        feed2 (4, pp, off, true);
+        auto out2 = feed2 (8, pp + 4 * blk * 2.0 / SR, bs, true);
+        const double r2 = stat (out2, 0, blk).rms;
+        std::printf("  対照(シークなし)の巻き戻し出力 rms=%.4f\n", r2);
+        CHECK (r2 > 0.05, "control: backspin should read earlier audio");
+    }
+
     std::printf("[14] パラメータを激しく動かしても爆発しない(ランダム操作ファズ)\n");
     {
         std::vector<float> L, R; makeSignal (L, R, (int) (SR * 20)); Engine e; e.prepare (SR);
@@ -340,6 +515,8 @@ int main()
                 p.colorType = std::rand() % kNumColor; p.colorKnob = rnd() * 2 - 1; p.colorParam = rnd(); p.centerLock = rnd() > 0.5f;
                 p.jogBackspin = rnd() > 0.85f; p.jogBrake = rnd() > 0.85f; p.jogReverse = rnd() > 0.85f; p.jogScratch = rnd() > 0.85f; p.jogLoop = rnd() > 0.85f;
                 p.jogSpeed = rnd() * 8 - 4; p.loopBeat = rnd(); p.backspinTimeMs = 200 + rnd() * 3800; p.brakeTimeMs = 50 + rnd() * 4950; p.backspinRate = 1 + rnd() * 9;
+                p.slip = rnd() > 0.4f; p.releaseTimeMs = 50 + rnd() * 4950; p.releaseBeats = rnd() > 0.6f ? 0.25f * (float) (1 + std::rand() % 16) : 0.f;
+                p.loopLatch = rnd() > 0.8f; p.jogResync = rnd() > 0.9f; p.quantize = rnd() > 0.5f; p.quantBeats = 0.125f * (float) (1 << (std::rand() % 4));
                 h.bpm = rnd() > 0.2f ? 60 + rnd() * 140 : 0;
             }
             h.ppq = off * 2.0 / SR * 1.0;

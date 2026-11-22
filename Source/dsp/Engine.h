@@ -83,6 +83,12 @@ struct Params
     float backspinTimeMs = 1200.f, backspinRate = 5.f, brakeTimeMs = 800.f;
     float backspinBeats = 0.f, brakeBeats = 0.f;   // >0ならBPMから長さを決める(拍数)
     float loopBeat = 0.5f;     // 0..1(リスト内の位置)
+    bool  loopLatch = false;   // RELOOP/EXIT: ONの間ループを続ける(ボタンを押し続けなくてよい)
+    bool  slip = true;         // ジョグ: 離したらライブ位置へ戻る(OFF=離した位置から続ける)
+    float releaseTimeMs = 400.f, releaseBeats = 0.f;   // ブレーキを放したあと等速へ戻る時間(releaseBeats>0なら拍で指定)
+    bool  jogResync = false;   // 遅れたままの再生をライブ位置へ戻す
+    bool  quantize = false;    // BACKSPIN/BRAKE/REVERSE/LOOPの開始と、SLIP OFFの遅れをDAWの拍に揃える
+    float quantBeats = 1.f;    // 1/8, 1/4, 1/2, 1
     float jogLatencyMs = 0.f;  // 前方向スクラッチ用の先読み(0なら遅延なし)
 
     float bpmFallback = 120.f;
@@ -96,7 +102,7 @@ struct HostInfo
     bool   playing = false;
 };
 
-enum MidiBits { kMidiBackspin = 1, kMidiBrake = 2, kMidiReverse = 4, kMidiScratch = 8, kMidiLoop = 16, kMidiFx = 32 };
+enum MidiBits { kMidiBackspin = 1, kMidiBrake = 2, kMidiReverse = 4, kMidiScratch = 8, kMidiLoop = 16, kMidiFx = 32, kMidiResync = 64 };
 
 // ------------------------------------------------------------ エンジン
 class Engine
@@ -115,6 +121,8 @@ public:
         gainSm.setTime (20.f, sr); gainSm.reset (1.f);
         for (auto* b : { &wl, &wr, &gl, &gr, &dl, &dr, &ph }) b->assign (kMaxChunk, 0.f);
         ppqInternal = 0.0; freePhase = 0.0; lastType = -1; lastOn = false; idleCount = 0;
+        for (int k = 0; k < 4; ++k) held[k] = pend[k] = false;
+        recallReq = false; lastHostSync = false; expectPpq = 0.0;
         reset();
     }
     void reset()
@@ -134,16 +142,76 @@ public:
         if (midiMask & kMidiScratch)  p.jogScratch = true;
         if (midiMask & kMidiLoop)     p.jogLoop = true;
         if (midiMask & kMidiFx)       p.fxOn = true;
+        if (midiMask & kMidiResync)   p.jogResync = true;
+
+        const double bpm = host.bpm > 1.0 ? host.bpm : (double) std::max (30.f, p.bpmFallback);
+        const double perSample = bpm / (60.0 * (double) sr);
+
+        // DAWの再生・停止・シークを、PPQの飛びで見つける → 遅れた再生や古い録音を捨てる
+        const bool hostSync = host.playing && host.ppq >= 0.0;
+        if (hostSync)
+        {
+            if (! lastHostSync || std::fabs (host.ppq - expectPpq) > 0.125) jog.transportJump();
+            expectPpq = host.ppq + (double) n * perSample;
+        }
+        else if (lastHostSync) jog.transportJump();
+        lastHostSync = hostSync;
 
         for (int off = 0; off < n; off += kMaxChunk)
-            processChunk (L + off, R + off, std::min (kMaxChunk, n - off), p, host);
+        {
+            HostInfo hc = host;
+            if (host.ppq >= 0.0) hc.ppq = host.ppq + (double) off * perSample;     // 長いブロックでも位相が途切れない
+            processTriggers (L + off, R + off, std::min (kMaxChunk, n - off), p, hc, bpm);
+        }
     }
 
+    double jogLagSamples() const { return jog.lagSamples(); }
     bool jogEngaged() const { return jog.engaged(); }
     static int latencyFor (float ms, double sr) { return (int) (ms * 0.001 * sr); }
 
 private:
-    void processChunk (float* L, float* R, int n, const Params& p, const HostInfo& host)
+    // BACKSPIN/BRAKE/REVERSE/LOOPの開始を、QUANTIZE ONならDAWの拍の頭まで待たせる(チャンク内で分割して発火)
+    void processTriggers (float* L, float* R, int n, const Params& p, const HostInfo& host, double bpm)
+    {
+        const bool want[4] = { p.jogBackspin, p.jogBrake, p.jogReverse, p.jogLoop || p.loopLatch };
+        const bool q = p.quantize && p.quantBeats > 0.f && host.playing && host.ppq >= 0.0;
+        for (int k = 0; k < 4; ++k)
+        {
+            if (! want[k]) { held[k] = pend[k] = false; if (k == 3) recallReq = false; continue; }
+            if (held[k] || pend[k]) continue;
+            if (k == 3) recallReq = ! p.jogLoop && p.loopLatch;       // RELOOPボタンで入った
+            if (q) pend[k] = true; else held[k] = true;
+        }
+        if (! q) for (int k = 0; k < 4; ++k) if (pend[k]) { held[k] = true; pend[k] = false; }
+
+        const double perSample = bpm / (60.0 * (double) sr);
+        int done = 0;
+        while (done < n)
+        {
+            int seg = n - done;
+            bool fire = false;
+            if (pend[0] || pend[1] || pend[2] || pend[3])
+            {
+                const double ppq = host.ppq + (double) done * perSample, gq = (double) p.quantBeats;
+                const double b = std::ceil (ppq / gq - 1e-6) * gq;
+                const int o = std::max (0, (int) std::lround ((b - ppq) / perSample));
+                if (o < seg) { seg = o; fire = true; }
+            }
+            if (seg > 0)
+            {
+                Params q2 = p;
+                q2.jogBackspin = held[0]; q2.jogBrake = held[1]; q2.jogReverse = held[2]; q2.jogLoop = held[3];
+                HostInfo hs = host;
+                if (host.ppq >= 0.0) hs.ppq = host.ppq + (double) done * perSample;
+                processChunk (L + done, R + done, seg, q2, hs, held[3] && recallReq);
+                if (held[3]) recallReq = false;
+            }
+            done += seg;
+            if (fire) for (int k = 0; k < 4; ++k) if (pend[k]) { held[k] = true; pend[k] = false; }
+        }
+    }
+
+    void processChunk (float* L, float* R, int n, const Params& p, const HostInfo& host, bool loopRecall)
     {
         const double bpm = host.bpm > 1.0 ? host.bpm : (double) std::max (30.f, p.bpmFallback);
 
@@ -157,6 +225,9 @@ private:
         jp.loopBeats = (float) beatListFor (kEcho).v[beatIndex (kEcho, p.loopBeat)];
         jp.bpm = bpm;
         jp.latencySamples = (int) (p.jogLatencyMs * 0.001f * sr);
+        jp.slip = p.slip; jp.releaseTimeMs = beatMs (p.releaseBeats, p.releaseTimeMs);
+        jp.loopRecall = loopRecall; jp.resync = p.jogResync;
+        jp.snapBeats = p.quantize ? p.quantBeats : 0.f;
         jog.process (L, R, n, jp);
 
         // ② SOUND COLOR FX
@@ -298,5 +369,7 @@ private:
     double ppqInternal = 0.0, freePhase = 0.0;
     int lastType = -1, idleCount = 0;
     bool lastOn = false;
+    bool held[4] = { false, false, false, false }, pend[4] = { false, false, false, false }, recallReq = false, lastHostSync = false;
+    double expectPpq = 0.0;
 };
 } // namespace djfx

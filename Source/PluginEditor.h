@@ -190,6 +190,7 @@ private:
     void timerCallback() override;
     void sectionHeader (juce::Graphics&, juce::Rectangle<int>, const juce::String&);
     void buildFace (int w, int h);
+    juce::TextButton* addAction (const juce::String& label, std::function<void()> onClick);
     juce::TextButton* addToggle (const juce::ParameterID&, const juce::String& label, juce::Colour accent = ui::teal);
     HoldButton* addHold (const juce::ParameterID&, const juce::String& label);
     float raw (const juce::ParameterID& id) const { return proc.apvts.getRawParameterValue (id.getParamID())->load(); }
@@ -199,18 +200,19 @@ private:
     juce::Image faceImage;
     juce::Rectangle<int> boxA, boxB, boxC;
 
-    std::unique_ptr<ChoiceGroup> colorTypes, latency;
+    std::unique_ptr<ChoiceGroup> colorTypes, latency, quantBeats;
     std::unique_ptr<FxSelector> fxSel;
     std::unique_ptr<XPad> xpad;
     std::unique_ptr<JogWheel> jog;
     std::unique_ptr<FxDisplay> lcd;
-    std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kLoop, kBpm, kOut;
+    std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kRelease, kLoop, kBpm, kOut;
     juce::OwnedArray<juce::TextButton> toggles;
     juce::OwnedArray<HoldButton> holds;
     juce::OwnedArray<juce::ButtonParameterAttachment> btnAtts;
     juce::TextButton *bOn = nullptr, *bSync = nullptr, *bLock = nullptr, *bLow = nullptr, *bMid = nullptr, *bHi = nullptr;
     juce::TextButton *bPrev = nullptr, *bNext = nullptr, *bTap = nullptr;
     std::vector<double> tapTimes;
-    HoldButton *hBack = nullptr, *hBrake = nullptr, *hRev = nullptr, *hLoop = nullptr;
+    HoldButton *hBack = nullptr, *hBrake = nullptr, *hRev = nullptr, *hLoop = nullptr, *hLive = nullptr;
+    juce::TextButton *tSlip = nullptr, *tQuant = nullptr, *bReloop = nullptr, *bHalf = nullptr, *bDouble = nullptr;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NamiDJFXEditor)
 };

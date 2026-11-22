@@ -52,6 +52,7 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (midiHeld[3]) mask |= djfx::kMidiScratch;
     if (midiHeld[4]) mask |= djfx::kMidiLoop;
     if (midiHeld[5]) mask |= djfx::kMidiFx;
+    if (midiHeld[6]) mask |= djfx::kMidiResync;       // F#1: ライブ位置へ戻す
 
     djfx::HostInfo host;
     if (auto* ph = getPlayHead())
@@ -76,6 +77,7 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         std::copy (L, L + n, tmp.begin());
         engine.process (L, tmp.data(), n, params, host, mask);
     }
+    jogLagMs = (float) (engine.jogLagSamples() / std::max (1.0, getSampleRate()) * 1000.0);
     for (int c = 2; c < nCh; ++c) buffer.clear (c, 0, n);
 }
 
