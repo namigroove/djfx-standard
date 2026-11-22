@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dsp-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: DSP単体テスト(JUCE不要)
+        run: |
+          g++ -std=c++17 -O2 -o dsp_test test/offline_test.cpp
+          ./dsp_test
+
+  vst3:
+    needs: dsp-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-universal
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: JUCE を取得
+        shell: bash
+        run: git clone --depth 1 --branch 8.0.8 https://github.com/juce-framework/JUCE.git external/JUCE
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+      - name: Build
+        run: cmake --build build --config Release --target NamiDJFX_VST3 --parallel
+      - name: Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJFX-Standard-${{ matrix.name }}
+          path: build/NamiDJFX_artefacts/**/VST3/DJFX Standard.vst3
