@@ -222,8 +222,63 @@ int main()
             (side ? dr : dl) = d; CHECK (!s.bad && s.peak < 6.f, "%s side %d peak %.2f", colorName (t), side, s.peak);
         }
         std::printf("  %-9s center maxdiff=%.2g  left diff=%.0f  right diff=%.0f\n", colorName (t), dC, dl, dr);
-        if (t != kNoise) CHECK (dC < 1e-3, "%s center not bypass", colorName (t));
+        CHECK (dC < 1e-3, "%s center not bypass", colorName (t));
         CHECK (dl > 1.0 && dr > 1.0, "%s no effect", colorName (t));
+    }
+
+
+    std::printf("[11b] SOUND COLOR FX: 説明書どおりの向きか(正弦波を通して測る)\n");
+    {
+        auto sine = [] (int n, double f, float amp) { std::vector<float> v ((size_t) n); for (int i = 0; i < n; ++i) v[(size_t) i] = amp * (float) std::sin (2 * kPi * f * i / SR); return v; };
+        auto rmsOf = [] (const std::vector<float>& a) { return stat (a, (int) SR, (int) a.size()).rms; };
+        auto runColor = [&] (int type, float knob, float param, std::vector<float> in) { auto R2 = in; Engine e; e.prepare (SR); Params p; p.colorType = type; p.colorKnob = knob; p.colorParam = param; run (e, in, R2, p, host); return in; };
+        const int n = (int) (SR * 3);
+
+        // FILTER: 左=ローパス(高い音が減る) / 右=ハイパス(低い音が減る)
+        double hiL = rmsOf (runColor (kColorFilter, -0.8f, 0.3f, sine (n, 6000, 0.5f))), hiR = rmsOf (runColor (kColorFilter, 0.8f, 0.3f, sine (n, 6000, 0.5f)));
+        double loL = rmsOf (runColor (kColorFilter, -0.8f, 0.3f, sine (n, 100, 0.5f))), loR = rmsOf (runColor (kColorFilter, 0.8f, 0.3f, sine (n, 100, 0.5f)));
+        std::printf ("  FILTER  6kHz: L=%.3f R=%.3f   100Hz: L=%.3f R=%.3f (入力 0.354)\n", hiL, hiR, loL, loR);
+        CHECK (hiL < hiR * 0.2 && loR < loL * 0.2, "filter direction");
+
+        // CRUSH: 右だけハイパスが加わる(低音が減る)
+        double cL = rmsOf (runColor (kCrush, -0.8f, 0.5f, sine (n, 100, 0.5f))), cR = rmsOf (runColor (kCrush, 0.8f, 0.5f, sine (n, 100, 0.5f)));
+        std::printf ("  CRUSH   100Hz: L=%.3f R=%.3f\n", cL, cR);
+        CHECK (cR < cL * 0.5, "crush highpass on right only");
+
+        // SWEEP: PARAMETERで決めた中心周波数で、左=ノッチ(減る) / 右=バンドパス(通る)
+        const double fc = 150.0 * std::pow (10000.0 / 150.0, 0.5);
+        double sL = rmsOf (runColor (kSweep, -0.9f, 0.5f, sine (n, fc, 0.5f))), sR = rmsOf (runColor (kSweep, 0.9f, 0.5f, sine (n, fc, 0.5f)));
+        std::printf ("  SWEEP   at fc=%.0fHz: notch(L)=%.3f bandpass(R)=%.3f\n", fc, sL, sR);
+        CHECK (sL < 0.05 && sR > 0.2, "sweep notch/bandpass");
+
+        // NOISE: 入力が無音でも出る。左は低域寄り、右は高域寄り(ゼロクロスで比較)。中央は無音
+        std::vector<float> z ((size_t) n, 0.f);
+        auto nl = runColor (kNoise, -0.8f, 0.8f, z), nr = runColor (kNoise, 0.8f, 0.8f, z), nc = runColor (kNoise, 0.f, 0.8f, z);
+        double zl = zeroCrossRate (nl, (int) SR, n), zr = zeroCrossRate (nr, (int) SR, n);
+        std::printf ("  NOISE   zero-cross: L=%.0f R=%.0f Hz-ish, rms center=%.5f, rms L=%.3f\n", zl, zr, rmsOf (nc), rmsOf (nl));
+        CHECK (zl < zr * 0.4 && rmsOf (nc) < 1e-4 && rmsOf (nl) > 0.01, "noise direction");
+
+        // DUB ECHO: 左は中音域(高音は反響しない)/ 右は高音域(中音は反響しにくい)。インパルスの後の尾の帯域で確認
+        auto tail = [&] (float knob, double f)
+        {
+            auto in = sine (n, f, 0.0f); for (int i = 0; i < 2400; ++i) in[(size_t) (48000 + i)] = 0.5f * (float) std::sin (2 * kPi * f * i / SR);
+            auto out = runColor (kDubEcho, knob, 0.6f, in);
+            return stat (out, 48000 + 9000, n).rms;     // 元の音が止んだ後のエコー
+        };
+        double mL = tail (-0.9f, 800), mR = tail (0.9f, 800), hL = tail (-0.9f, 8000), hR = tail (0.9f, 8000);
+        std::printf ("  DUBECHO tail 800Hz: L=%.4f R=%.4f   8kHz: L=%.4f R=%.4f\n", mL, mR, hL, hR);
+        CHECK (mL > mR * 3 && hR > hL * 3, "dub echo band");
+
+        // SPACE: 左は中+低、右は中+高 (リバーブの尾の帯域)
+        auto stail = [&] (float knob, double f)
+        {
+            auto in = sine (n, f, 0.0f); for (int i = 0; i < 2400; ++i) in[(size_t) (48000 + i)] = 0.5f * (float) std::sin (2 * kPi * f * i / SR);
+            auto out = runColor (kSpace, knob, 0.6f, in);
+            return stat (out, 48000 + 6000, n).rms;
+        };
+        double lL = stail (-0.9f, 100), lR = stail (0.9f, 100), qL = stail (-0.9f, 8000), qR = stail (0.9f, 8000);
+        std::printf ("  SPACE   tail 100Hz: L=%.4f R=%.4f   8kHz: L=%.4f R=%.4f\n", lL, lR, qL, qR);
+        CHECK (lL > lR * 2 && qR > qL * 2, "space band");
     }
 
     std::printf("[12] MOBIUS: 上昇/下降の向き(300-900Hzのスペクトル重心の変化方向)\n");

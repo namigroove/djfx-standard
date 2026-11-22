@@ -62,3 +62,16 @@ GitHubにpushすると、Actionsが Windows と Mac のVST3をビルドして `A
 - SPIRAL は「ピッチが上がっていくフィードバック残響」、MOBIUS は「入力の大きさに追従する、上がり続ける/下がり続ける音」としています。
 - HELIX は録音して重ねるループです。LEVEL/DEPTHを右へ回し切ると固定します。
 - LEVEL/DEPTHの混ぜ方(DELAY系は足し算、FILTER・FLANGER・PHASER・ROLLなどは原音との入れ替え)は聴感で決めています。
+
+## SOUND COLOR FX (DJM-A9 説明書 p.38-41 準拠)
+| FX | COLOR 左 / 右 | PARAMETER |
+|---|---|---|
+| SPACE | 中+低域 / 中+高域にリバーブ | フィードバック |
+| DUB ECHO | 中域 / 高域に反響 | フィードバック |
+| SWEEP | ノッチ(帯域が広がる) / バンドパス(帯域が狭まる) | 中心周波数 |
+| NOISE | ノイズ用フィルターのカットオフ 下げる / 上げる | ノイズ音量 |
+| CRUSH | クラッシュのみ / クラッシュ後にHPF | クラッシュ量 |
+| FILTER | LPF / HPF | レゾナンス |
+
+CENTER LOCK: ON のときCOLORを速く回しても中央で止まり、手を離すと解除(止まった側へ戻せば続けて回せる)。
+未確認/仮定: DUB ECHOの遅延時間(説明書に記載なし → 1拍で仮置き)、NOISEのEQ/ISOによる音質調整(チャンネルEQなしのため未対応)。

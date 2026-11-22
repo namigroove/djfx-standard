@@ -35,7 +35,7 @@ public:
         if (type != lastType) { reset(); lastType = type; sc.reset (colorKnob); sp.reset (param); }
         if (type == kColorOff) return;
 
-        const float dz = centerLock ? 0.07f : 0.015f;
+        const float dz = centerLock ? 0.04f : 0.015f;
         float* io[2] = { L, R };
         const float beatSamples = clampf ((float) (60.0 / std::max (bpm, 30.0)) * sr, 64.f, 2.f * sr);
         if (! dInit) { dts.reset (beatSamples); dInit = true; }
@@ -105,9 +105,9 @@ public:
                     }
                     break;
                 }
-                case kNoise:
+                case kNoise:   // 説明書: フィルターを通したホワイトノイズを混ぜる。COLOR左でカットオフを下げ、右で上げる。音量はPARAMETER
                 {
-                    const float g = p * p * 1.2f;
+                    const float g = p * p * 1.2f * smooth01 (a * 4.f);     // 中央ではエフェクトなし
                     const float fc = expMap (c * 0.5f + 0.5f, 80.f, 14000.f);
                     for (int ch = 0; ch < 2; ++ch)
                     {
@@ -118,12 +118,11 @@ public:
                     }
                     break;
                 }
-                case kCrush:
+                case kCrush:   // 説明書: 左=クラッシュのみ / 右=クラッシュ後にハイパスを加える。荒さの量はPARAMETER
                 {
-                    const float strength = c < 0.f ? p : lerpf (0.5f, p, 0.5f);
-                    const float levels = std::exp2 (lerpf (15.f, 2.f, strength));
-                    const float down = 1.f + strength * 23.f;
-                    const float amt = smooth01 (a * (c < 0.f ? 5.f : 8.f));
+                    const float levels = std::exp2 (lerpf (15.f, 2.f, p));
+                    const float down = 1.f + p * 23.f;
+                    const float amt = smooth01 (a * 6.f);
                     holdCnt += 1.f;
                     if (holdCnt >= down)
                     {

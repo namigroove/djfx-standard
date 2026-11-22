@@ -59,6 +59,32 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
         return;
     }
 
+    if ((bool) b.getProperties().getWithDefault ("slide", false))
+    {
+        // 実機のCENTER LOCK: OFF ○━ ON のスライドスイッチ + 点灯する小窓
+        const float cy = r.getCentreY();
+        g.setColour (on ? ui::amber : Colour (0xff3a2f14));
+        g.fillRoundedRectangle (r.getX() + 4.f, cy - 3.f, 14.f, 6.f, 1.5f);
+        g.setColour (ui::padEdge); g.drawRoundedRectangle (r.getX() + 4.f, cy - 3.f, 14.f, 6.f, 1.5f, 1.f);
+        auto tr = Rectangle<float> (r.getRight() - 40.f, cy - 6.f, 28.f, 12.f);
+        g.setColour (ui::well); g.fillRoundedRectangle (tr, 6.f);
+        g.setColour (ui::padEdge); g.drawRoundedRectangle (tr, 6.f, 1.f);
+        const float kx = on ? tr.getRight() - 6.f : tr.getX() + 6.f;
+        ColourGradient gr (Colour (0xffe8edf2), kx, cy - 5.f, Colour (0xff8a949e), kx, cy + 5.f, false);
+        g.setGradientFill (gr); g.fillEllipse (kx - 5.5f, cy - 5.5f, 11.f, 11.f);
+        return;
+    }
+    if ((bool) b.getProperties().getWithDefault ("silver", false))
+    {
+        // 実機のSOUND COLOR FXボタン: 銀の縁取りの四角いパッド。選択中は中が点く
+        r = r.reduced (1.f);
+        ColourGradient eg (Colour (0xffd9dee4), r.getX(), r.getY(), Colour (0xff7d8791), r.getX(), r.getBottom(), false);
+        g.setGradientFill (eg); g.fillRoundedRectangle (r, 3.f);
+        auto in = r.reduced (2.5f);
+        g.setColour (down ? Colour (0xff0a1022) : ui::padOff); g.fillRoundedRectangle (in, 2.f);
+        if (on) { g.setColour (accent.withAlpha (0.38f)); g.fillRoundedRectangle (in, 2.f); g.setColour (accent.withAlpha (0.9f)); g.drawRoundedRectangle (in, 2.f, 1.f); }
+        return;
+    }
     r = r.reduced (0.5f);
     g.setColour (down ? ui::panel : ui::padOff);
     g.fillRoundedRectangle (r, bold ? 3.f : 2.f);
@@ -89,6 +115,16 @@ void NamiLnF::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     const bool on = b.getToggleState();
     const bool round = (bool) b.getProperties().getWithDefault ("round", false);
     const int arrow = (int) b.getProperties().getWithDefault ("arrow", 0);
+    if ((bool) b.getProperties().getWithDefault ("slide", false))
+    {
+        auto a = b.getLocalBounds();
+        g.setFont (fontBold (0.8f)); g.setColour (ui::text.withAlpha (0.85f));
+        g.drawText (b.getButtonText(), a.withTrimmedLeft (22).withTrimmedRight (46), Justification::centredLeft, false);
+        g.setFont (font (0.65f)); g.setColour (ui::dim);
+        g.drawText ("OFF", a.getRight() - 62, a.getY(), 20, a.getHeight(), Justification::centredRight, false);
+        g.drawText ("ON",  a.getRight() - 11, a.getY(), 16, a.getHeight(), Justification::centredLeft, false);
+        return;
+    }
     if (arrow != 0)                                            // ◀ ▶ はフォントに頼らず三角形を描く
     {
         auto c = b.getLocalBounds().toFloat().getCentre();
@@ -112,22 +148,27 @@ static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool
     g.fillEllipse (c.x - rBody - 2.f, c.y - rBody - 2.f, (rBody + 2.f) * 2, (rBody + 2.f) * 2);
     if (knurl)
     {
-        g.setColour (Colour (0xff1b2745));
+        // 銀の胴 + 細かい溝(ローレット) + 平らな銀の天面
+        ColourGradient body (Colour (0xffe6eaee), c.x - rBody, c.y - rBody, Colour (0xff6f7882), c.x + rBody, c.y + rBody, false);
+        g.setGradientFill (body);
         g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
-        for (int i = 0; i < 36; ++i)
+        for (int i = 0; i < 90; ++i)
         {
-            const float a = MathConstants<float>::twoPi * (float) i / 36.f;
-            g.setColour (Colour (0xff7d93b3));
-            g.drawLine (c.x + std::sin (a) * (rBody - 6.f), c.y - std::cos (a) * (rBody - 6.f),
-                        c.x + std::sin (a) * rBody, c.y - std::cos (a) * rBody, 2.f);
+            const float a = MathConstants<float>::twoPi * (float) i / 90.f;
+            const float shade = 0.5f + 0.5f * std::sin (a - 0.8f);            // 左上から光が当たる
+            g.setColour (Colour (0xff3b434d).withAlpha (0.25f + 0.35f * (1.f - shade)));
+            g.drawLine (c.x + std::sin (a) * (rBody - 5.f), c.y - std::cos (a) * (rBody - 5.f),
+                        c.x + std::sin (a) * (rBody - 0.5f), c.y - std::cos (a) * (rBody - 0.5f), 1.3f);
         }
-        g.setColour (ui::padEdge);
-        g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.f);
-        const float rt = rBody - 7.f;
-        g.setColour (Colour (0xff0e1528)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
-        g.setColour (Colour (0xff26355a)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
+        const float rt = rBody - 6.f;
+        ColourGradient top (Colour (0xffd2d8de), c.x - rt, c.y - rt, Colour (0xff98a1ab), c.x + rt, c.y + rt, false);
+        g.setGradientFill (top); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
+        g.setColour (Colour (0xff59616b)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
+        g.setColour (Colour (0xff1c2330));                                   // 銀の面に黒いポインタ
+        g.drawLine (c.x + std::sin (angle) * (rBody * 0.30f), c.y - std::cos (angle) * (rBody * 0.30f),
+                    c.x + std::sin (angle) * (rt - 3.f), c.y - std::cos (angle) * (rt - 3.f), 3.f);
+        return;
     }
-    else
     {
         g.setColour (ui::ink);                               // 黒い胴
         g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
@@ -191,6 +232,31 @@ Knob::Knob (AudioProcessorValueTreeState& s, const ParameterID& id, const String
     addAndMakeVisible (slider);
     att = std::make_unique<SliderParameterAttachment> (*s.getParameter (id.getParamID()), slider);
 }
+void Knob::enableCenterLock()
+{
+    // 実機: ロックONで速く回しても中央で止まる。手を離すと解除され、止まった側へ戻せば続けて回せる
+    auto sideOf = [] (double v) { return v > 0.004 ? 1 : (v < -0.004 ? -1 : 0); };
+    slider.onValueChange = [this, sideOf]
+    {
+        if (guard > 0 || ! slider.isMouseButtonDown() || ! (lockOn && lockOn())) { lastSide = sideOf (slider.getValue()); return; }
+        const int side = sideOf (slider.getValue());
+        if (locked)
+        {
+            if (side == lockSide) { locked = false; lastSide = side; return; }     // 来た側へ戻した
+            ++guard; slider.setValue (0.0, sendNotificationSync); --guard;
+            return;
+        }
+        if (lastSide != 0 && side == -lastSide)                                    // 中央をまたいだ
+        {
+            locked = true; lockSide = lastSide;
+            ++guard; slider.setValue (0.0, sendNotificationSync); --guard;
+            lastSide = 0;
+            return;
+        }
+        lastSide = side;
+    };
+    slider.onDragEnd = [this, sideOf] { locked = false; lastSide = sideOf (slider.getValue()); };
+}
 void Knob::resized()
 {
     const int d = std::min (getWidth(), getHeight() - 42);
@@ -234,7 +300,7 @@ ChoiceGroup::ChoiceGroup (AudioProcessorValueTreeState& s, const ParameterID& id
         {
             auto* p = apvts.getParameter (pid);
             const int cur = (int) apvts.getRawParameterValue (pid)->load();
-            const int target = (offToggle && cur == i + offset) ? 0 : i + offset;   // 点灯中をもう一度押すとOFF
+            const int target = (offToggle && cur == valueOf (i)) ? 0 : valueOf (i);   // 点灯中をもう一度押すとOFF
             p->beginChangeGesture();
             p->setValueNotifyingHost (p->convertTo0to1 ((float) target));
             p->endChangeGesture();
@@ -253,7 +319,7 @@ void ChoiceGroup::resized()
 void ChoiceGroup::timerCallback()
 {
     const int cur = (int) apvts.getRawParameterValue (pid)->load();
-    for (int i = 0; i < buttons.size(); ++i) buttons[i]->setToggleState (i + offset == cur, dontSendNotification);
+    for (int i = 0; i < buttons.size(); ++i) buttons[i]->setToggleState (valueOf (i) == cur, dontSendNotification);
 }
 
 // ------------------------------------------------------------------ X-PAD
@@ -592,11 +658,15 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     setLookAndFeel (&lnf);
     auto& s = proc.apvts;
 
+    // 実機の並び: SPACE DUB ECHO / CRUSH SWEEP / NOISE FILTER (パラメータ順とは違うので対応表を持つ)
+    const int hwOrder[] = { djfx::kSpace, djfx::kDubEcho, djfx::kCrush, djfx::kSweep, djfx::kNoise, djfx::kColorFilter };
     StringArray colNames;
-    for (int i = 1; i < djfx::kNumColor; ++i) colNames.add (djfx::colorName (i));      // OFFは押し直しで切る
+    for (int t : hwOrder) colNames.add (djfx::colorName (t));      // OFFは押し直しで切る
 
     fxSel = std::make_unique<FxSelector> (s);
     colorTypes = std::make_unique<ChoiceGroup> (s, ids::colorType, colNames, 2, 4, false, 1, true);
+    for (int t : hwOrder) colorTypes->values.add (t);
+    for (auto* b : colorTypes->getChildren()) b->getProperties().set ("silver", true);
     latency = std::make_unique<ChoiceGroup> (s, ids::jogLatency, StringArray { "0", "60", "125", "250", "500" }, 5, 3);
     xpad = std::make_unique<XPad> (s);
     jog = std::make_unique<JogWheel> (s);
@@ -609,6 +679,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     bOn->getProperties().set ("round", true);
     bSync = addToggle (ids::fxSync, "BPM SYNC");
     bLock = addToggle (ids::centerLock, "CENTER LOCK", ui::amber);
+    bLock->getProperties().set ("slide", true);
     bLow = addToggle (ids::bandLow, "LOW");
     bMid = addToggle (ids::bandMid, "MID");
     bHi  = addToggle (ids::bandHi,  "HI");
@@ -657,6 +728,8 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
         const float c = raw (ids::colorKnob);
         return std::fabs (c) < 0.02f ? String ("CENTER") : String (c < 0 ? "L " : "R ") + String ((int) std::lround (std::fabs (c) * 100.f));
     }, "LOW", "HI", true, false, true);
+    kColor->lockOn = [this] { return raw (ids::centerLock) > 0.5f; };
+    kColor->enableCenterLock();
     kParam = mk (ids::colorParam, "PARAMETER", [this] { return pct (raw (ids::colorParam)); }, "MIN", "MAX");
     kBs = mk (ids::bsTime, "SPIN TIME", [this] { return String ((int) raw (ids::bsTime)) + "ms"; }, "0.2s", "4s");
     kRate = mk (ids::bsRate, "SPIN RATE", [this] { return "x" + String (raw (ids::bsRate), 1); }, "x1", "x10");

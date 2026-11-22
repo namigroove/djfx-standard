@@ -73,7 +73,10 @@ public:
     StepSlider slider;
     juce::String name, minLabel, maxLabel;
     std::function<juce::String()> valueText;
+    std::function<bool()> lockOn;            // CENTER LOCK(ONの間、中央を越えて回せない)
+    void enableCenterLock();
 private:
+    bool locked = false; int lastSide = 0, lockSide = 0, guard = 0;
     std::unique_ptr<juce::SliderParameterAttachment> att;
 };
 
@@ -83,7 +86,9 @@ public:
     ChoiceGroup (juce::AudioProcessorValueTreeState&, const juce::ParameterID&, juce::StringArray labels, int cols, int gap = 4, bool led = false,
                  int indexOffset = 0, bool toggleOff = false);
     void resized() override;
+    juce::Array<int> values;                 // 空なら i+offset。実機の並びとパラメータ順が違うときに使う
 private:
+    int valueOf (int i) const { return values.isEmpty() ? i + offset : values[i]; }
     void timerCallback() override;
     juce::AudioProcessorValueTreeState& apvts;
     juce::String pid;
