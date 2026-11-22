@@ -81,6 +81,7 @@ struct Params
     bool  jogBackspin = false, jogBrake = false, jogReverse = false, jogScratch = false, jogLoop = false;
     float jogSpeed = 0.f;
     float backspinTimeMs = 1200.f, backspinRate = 5.f, brakeTimeMs = 800.f;
+    float backspinBeats = 0.f, brakeBeats = 0.f;   // >0ならBPMから長さを決める(拍数)
     float loopBeat = 0.5f;     // 0..1(リスト内の位置)
     float jogLatencyMs = 0.f;  // 前方向スクラッチ用の先読み(0なら遅延なし)
 
@@ -150,7 +151,9 @@ private:
         JogParams jp;
         jp.backspin = p.jogBackspin; jp.brake = p.jogBrake; jp.reverse = p.jogReverse;
         jp.scratch = p.jogScratch;   jp.loop = p.jogLoop;   jp.speed = p.jogSpeed;
-        jp.backspinTimeMs = p.backspinTimeMs; jp.backspinRate = p.backspinRate; jp.brakeTimeMs = p.brakeTimeMs;
+        auto beatMs = [bpm] (float beats, float ms) { return beats > 0.f ? (float) std::clamp (beats * 60000.0 / bpm, 20.0, 30000.0) : ms; };
+        jp.backspinTimeMs = beatMs (p.backspinBeats, p.backspinTimeMs); jp.backspinRate = p.backspinRate;
+        jp.brakeTimeMs = beatMs (p.brakeBeats, p.brakeTimeMs);
         jp.loopBeats = (float) beatListFor (kEcho).v[beatIndex (kEcho, p.loopBeat)];
         jp.bpm = bpm;
         jp.latencySamples = (int) (p.jogLatencyMs * 0.001f * sr);

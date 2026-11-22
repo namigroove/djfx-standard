@@ -261,6 +261,52 @@ void Knob::resized()
 {
     const int d = std::min (getWidth(), getHeight() - 42);
     slider.setBounds ((getWidth() - d) / 2, 0, d, d);
+    layoutEdit();
+}
+void Knob::layoutEdit()
+{
+    // [札][数字欄] 単位   札があるときは左に寄せて並べる
+    const bool tag = tagText && tagText().isNotEmpty();
+    const int fw = tag ? 36 : 44, uw = unit.isEmpty() ? 0 : 14, tw = tag ? 28 : 0;
+    const int total = tw + fw + (uw > 0 ? uw + 2 : 0);
+    const int x0 = (getWidth() - total) / 2 + tw;
+    const Rectangle<int> r (x0, getHeight() - 29, fw, 15);
+    if (edit.getBounds() != r) edit.setBounds (r);
+}
+void Knob::makeEditable (const String& unitText, std::function<String()> numText, std::function<void (double)> onTyped)
+{
+    unit = unitText; numberText = std::move (numText);
+    edit.setEditable (false, true);                                    // ダブルクリックで入力
+    edit.setJustificationType (Justification::centred);
+    edit.setColour (Label::textColourId, ui::amber);
+    edit.setColour (Label::backgroundColourId, ui::well);
+    edit.setColour (Label::outlineColourId, ui::padEdge);
+    edit.setColour (Label::textWhenEditingColourId, ui::text);
+    edit.setColour (TextEditor::backgroundColourId, ui::well);
+    edit.setColour (TextEditor::highlightColourId, ui::teal.withAlpha (0.4f));
+    edit.setTooltip (TRANS ("double-click to type"));
+    edit.onEditorShow = [this]
+    {
+        if (auto* ed = edit.getCurrentTextEditor()) { ed->setInputRestrictions (7, "0123456789."); ed->selectAll(); }
+    };
+    edit.onTextChange = [this, onTyped]
+    {
+        const double v = edit.getText().getDoubleValue();
+        if (v > 0.0 && onTyped) onTyped (v);
+        timerCallback();
+    };
+    addAndMakeVisible (edit);
+    startTimerHz (15);
+    timerCallback();
+}
+void Knob::timerCallback()
+{
+    if (numberText == nullptr || edit.isBeingEdited()) return;
+    const String t = numberText();
+    if (edit.getText() != t) edit.setText (t, dontSendNotification);
+    layoutEdit();
+    repaint();
+    edit.setFont (dynamic_cast<NamiLnF*> (&getLookAndFeel()) != nullptr ? dynamic_cast<NamiLnF&> (getLookAndFeel()).font (0.9f) : Font (FontOptions (12.f)));
 }
 void Knob::paint (Graphics& g)
 {
@@ -282,7 +328,23 @@ void Knob::paint (Graphics& g)
     endLabel (maxLabel, a1, Justification::centredLeft);
     g.setFont (l.font (0.9f));
     g.setColour (ui::amber);
-    g.drawText (valueText ? valueText() : String(), 0, getHeight() - 28, getWidth(), 14, Justification::centred, false);
+    if (numberText != nullptr)
+    {
+        const auto e = edit.getBounds();
+        g.setFont (l.font (0.75f)); g.setColour (ui::dim);
+        g.drawText (unit, e.getRight() + 2, e.getY(), 16, e.getHeight(), Justification::centredLeft, false);   // 単位は欄の外
+        const String tag = tagText ? tagText() : String();
+        if (tag.isNotEmpty())
+        {
+            auto tr = Rectangle<float> ((float) e.getX() - 28.f, (float) e.getY() + 1.f, 26.f, (float) e.getHeight() - 2.f);
+            g.setColour (ui::teal.withAlpha (0.25f)); g.fillRoundedRectangle (tr, 2.f);
+            g.setColour (ui::teal); g.drawRoundedRectangle (tr, 2.f, 1.f);
+            g.setFont (l.fontBold (0.7f)); g.drawText (tag, tr.toNearestInt(), Justification::centred, false);
+        }
+    }
+    else
+        g.drawText (valueText ? valueText() : String(), 0, getHeight() - 28, getWidth(), 14, Justification::centred, false);
+    g.setFont (l.font (0.9f));
     g.setColour (ui::text.withAlpha (0.9f));
     g.drawText (name, 0, getHeight() - 14, getWidth(), 14, Justification::centred, false);
 }
@@ -738,6 +800,66 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     kLoop->slider.stepCount = [] { return djfx::beatListFor (djfx::kEcho).n; };
     kBpm = mk (ids::bpm, "BPM (NO HOST)", [this] { return String ((int) raw (ids::bpm)); }, "30", "300");
     kOut = mk (ids::outGain, "OUT", [this] { return String (raw (ids::outGain), 1) + "dB"; }, "-24", "+6");
+
+    // ---- 数字入力欄(単位は外) と 右クリックの音符メニュー(その時のBPMでmsに直す)
+    auto bpmNow = [this] { return (double) std::max (30.f, proc.lastBpm.load()); };
+    auto noteIdx = [this] (const ParameterID& id) { return jlimit (0, kNumNotes - 1, (int) raw (id)); };
+    auto noteMenu = [this, bpmNow, noteIdx] (Knob& k, const ParameterID& msId, const ParameterID& beatId)
+    {
+        k.slider.onDragStart = [this, beatId] { setParamValue (proc.apvts, beatId, 0.f); };   // 回したら自由なmsに戻る
+        k.tagText = [noteIdx, beatId] { const int i = noteIdx (beatId); return i > 0 ? String (kNoteNames[i]) : String(); };
+        k.makeEditable ("ms",
+            [this, bpmNow, noteIdx, msId, beatId] { const int i = noteIdx (beatId); return String ((int) std::lround (i > 0 ? noteMs (i, bpmNow()) : raw (msId))); },
+            [this, msId, beatId] (double v) { setParamValue (proc.apvts, beatId, 0.f); setParamValue (proc.apvts, msId, (float) v); });
+        k.slider.onPopup = [this, &k, bpmNow, noteIdx, msId, beatId]
+        {
+            const double bpm = bpmNow();
+            PopupMenu m;
+            m.addSectionHeader ("BPM " + String (bpm, 1) + " で合わせる");
+            for (int i = 1; i < kNumNotes; ++i)
+                m.addItem (i, String (kNoteNames[i]).paddedRight (' ', 6) + "= " + String ((int) std::lround (noteMs (i, bpm))) + " ms", true, noteIdx (beatId) == i);
+            m.addSeparator();
+            m.addItem (100, "FREE (ms)", true, noteIdx (beatId) == 0);
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&k.slider),
+                [this, msId, beatId, bpm] (int r)
+                {
+                    if (r <= 0) return;
+                    if (r == 100) { setParamValue (proc.apvts, beatId, 0.f); return; }
+                    auto* prm = proc.apvts.getParameter (msId.getParamID());
+                    const auto rng = prm->getNormalisableRange();
+                    setParamValue (proc.apvts, msId, jlimit (rng.start, rng.end, noteMs (r, bpm)));   // つまみも換算した位置へ
+                    setParamValue (proc.apvts, beatId, (float) r);                                   // 以後BPMに追従
+                });
+        };
+    };
+    noteMenu (*kBs, ids::bsTime, ids::bsBeat);
+    noteMenu (*kBrake, ids::brakeTime, ids::brakeBeat);
+
+    // BEAT FX の TIME: 欄で ms を打てる / 右クリックで拍を選ぶ(BEATボタンと同じく拍同期になる)
+    kTime->makeEditable ("ms", [this] { return String ((int) raw (ids::fxTime)); },
+                         [this] (double v) { setParamValue (proc.apvts, ids::fxSync, 0.f); setParamValue (proc.apvts, ids::fxTime, (float) v); });
+    kTime->slider.onPopup = [this]
+    {
+        const int type = (int) raw (ids::fxType);
+        const auto& bl = djfx::beatListFor (type);
+        if (bl.n < 2) return;
+        const double bpm = std::max (30.f, proc.lastBpm.load());
+        PopupMenu m;
+        m.addSectionHeader (String (djfx::fxName (type)) + "  BPM " + String (bpm, 1));
+        for (int i = 0; i < bl.n; ++i)
+        {
+            const float nrm = djfx::beatNormFromIndex (type, i);
+            m.addItem (i + 1, String (djfx::beatLabel (type, nrm)).paddedRight (' ', 6) + "= " + String ((int) std::lround (std::fabs (bl.v[i]) * 60000.0 / bpm)) + " ms");
+        }
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&kTime->slider), [this, type] (int r)
+        {
+            if (r <= 0) return;
+            setParamValue (proc.apvts, ids::fxBeat, djfx::beatNormFromIndex (type, r - 1));
+            setParamValue (proc.apvts, ids::fxSync, 1.f);
+        });
+    };
+    kBpm->makeEditable ("", [this] { return String ((int) std::lround (raw (ids::bpm))); },
+                        [this] (double v) { setParamValue (proc.apvts, ids::bpm, (float) jlimit (30.0, 300.0, v)); });
 
     setSize (1000, 640);
     startTimerHz (30);

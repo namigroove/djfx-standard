@@ -55,6 +55,16 @@ class StepSlider : public juce::Slider
 {
 public:
     std::function<int()> stepCount;
+    std::function<void()> onPopup;           // 右クリック(メニュー)。ドラッグはしない
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        popupDown = e.mods.isPopupMenu() && onPopup != nullptr;
+        if (popupDown) { onPopup(); return; }
+        juce::Slider::mouseDown (e);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override { if (! popupDown) juce::Slider::mouseDrag (e); }
+    void mouseUp (const juce::MouseEvent& e) override   { if (! popupDown) juce::Slider::mouseUp (e); popupDown = false; }
+    bool popupDown = false;
     double snapValue (double v, DragMode) override
     {
         const int n = stepCount ? stepCount() : 0;
@@ -63,7 +73,7 @@ public:
     }
 };
 
-class Knob : public juce::Component
+class Knob : public juce::Component, private juce::Timer
 {
 public:
     Knob (juce::AudioProcessorValueTreeState&, const juce::ParameterID&, const juce::String& name,
@@ -74,8 +84,16 @@ public:
     juce::String name, minLabel, maxLabel;
     std::function<juce::String()> valueText;
     std::function<bool()> lockOn;            // CENTER LOCK(ONの間、中央を越えて回せない)
+    // 数字だけ打てる欄。単位は欄の外に固定表示。numText: 表示する数字, onTyped: 確定した数字
+    void makeEditable (const juce::String& unitText, std::function<juce::String()> numText, std::function<void (double)> onTyped);
+    std::function<juce::String()> tagText;   // 値の左に出す小さな札(例: 1/4)
     void enableCenterLock();
 private:
+    void timerCallback() override;
+    void layoutEdit();
+    juce::Label edit;
+    juce::String unit;
+    std::function<juce::String()> numberText;
     bool locked = false; int lastSide = 0, lockSide = 0, guard = 0;
     std::unique_ptr<juce::SliderParameterAttachment> att;
 };
