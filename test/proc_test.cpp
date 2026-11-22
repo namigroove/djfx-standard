@@ -86,6 +86,51 @@ int main()
         std::printf ("  type %d->%d color %.2f->%.2f bs %.0f->%.0f\n", pa.fxType, pc.fxType, pa.colorKnob, pc.colorKnob, pa.backspinTimeMs, pc.backspinTimeMs);
         CHECK (pa.fxType == pc.fxType && std::fabs (pa.colorKnob - pc.colorKnob) < 1e-4 && std::fabs (pa.backspinTimeMs - pc.backspinTimeMs) < 1e-2, "state roundtrip");
     }
+
+    std::printf("[G] 記録(REC): 押している間だけ操作系パラメータのジェスチャーが開き続ける\n");
+    {
+        struct L : juce::AudioProcessorParameter::Listener
+        {
+            int begins = 0, ends = 0;
+            void parameterValueChanged (int, float) override {}
+            void parameterGestureChanged (int, bool s) override { (s ? begins : ends)++; }
+        } lis;
+        NamiDJFXProcessor p;
+        auto* xp = p.apvts.getParameter (ids::xpadPos.getParamID());
+        auto* bpmP = p.apvts.getParameter (ids::bpm.getParamID());
+        auto* sp = p.apvts.getParameter (ids::colorKnob.getParamID());
+        xp->addListener (&lis); bpmP->addListener (&lis);
+        p.setRecording (true);
+        CHECK (lis.begins == 1 && lis.ends == 0, "REC on: gesture should begin once (bpm is excluded)");
+        // 記録中に画面のつまみを離した(ジェスチャー終了)→ つかみ直される
+        sp->addListener (&lis);
+        const int b0 = lis.begins;
+        sp->beginChangeGesture(); sp->endChangeGesture();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        CHECK (lis.begins >= b0 + 2, "gesture should be re-grabbed after the UI releases a knob");
+        // 手でxpadPosを離した場合
+        xp->beginChangeGesture(); xp->endChangeGesture();
+        const int e0 = lis.ends;
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        p.setRecording (false);
+        CHECK (lis.ends >= e0 + 1, "REC off: gesture should end");
+        const int e1 = lis.ends;
+        p.setRecording (false);
+        CHECK (lis.ends == e1, "REC off twice must not end again");
+        xp->removeListener (&lis); bpmP->removeListener (&lis); sp->removeListener (&lis);
+        std::printf ("  begin=%d end=%d\n", lis.begins, lis.ends);
+        // MIDI G1(43)を押している間だけ記録
+        p.prepareToPlay (48000, 256);
+        juce::AudioBuffer<float> buf (2, 256); buf.clear();
+        juce::MidiBuffer mb; mb.addEvent (juce::MidiMessage::noteOn (1, 43, (juce::uint8) 100), 0);
+        p.processBlock (buf, mb);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        CHECK (p.recording.load(), "MIDI G1 down should start REC");
+        juce::MidiBuffer mb2; mb2.addEvent (juce::MidiMessage::noteOff (1, 43), 0);
+        p.processBlock (buf, mb2);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        CHECK (! p.recording.load(), "MIDI G1 up should stop REC");
+    }
     std::printf ("[F] パラメータ数: %d\n", (int) NamiDJFXProcessor().getParameters().size());
     std::printf ("\n%s\n", failures ? "FAILED" : "ALL PASSED");
     return failures ? 1 : 0;

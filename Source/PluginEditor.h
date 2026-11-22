@@ -213,6 +213,6 @@ private:
     juce::TextButton *bPrev = nullptr, *bNext = nullptr, *bTap = nullptr;
     std::vector<double> tapTimes;
     HoldButton *hBack = nullptr, *hBrake = nullptr, *hRev = nullptr, *hLoop = nullptr, *hLive = nullptr;
-    juce::TextButton *tSlip = nullptr, *tQuant = nullptr, *bReloop = nullptr, *bHalf = nullptr, *bDouble = nullptr;
+    juce::TextButton *tSlip = nullptr, *tQuant = nullptr, *bReloop = nullptr, *bHalf = nullptr, *bDouble = nullptr, *bRec = nullptr;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NamiDJFXEditor)
 };

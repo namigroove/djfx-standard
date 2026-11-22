@@ -2,11 +2,11 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Params.h"
 
-class NamiDJFXProcessor : public juce::AudioProcessor, private juce::AsyncUpdater
+class NamiDJFXProcessor : public juce::AudioProcessor, private juce::AsyncUpdater, private juce::AudioProcessorParameter::Listener
 {
 public:
     NamiDJFXProcessor();
-    ~NamiDJFXProcessor() override = default;
+    ~NamiDJFXProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -31,8 +31,19 @@ public:
     std::atomic<float> jogLagMs { 0.f };    // 画面表示用(SLIP OFFでライブより遅れている長さ)
     std::atomic<float> lastBpm { 120.f };   // 画面表示用(ホストのBPM。不明なら手入力BPM)
 
+    // 記録: ONの間、操作系のパラメータを「触っている」状態(ジェスチャー)にし続ける。
+    // DAWのオートメーションがTouch/Latch/Writeなら、その間の動きが(動かしていない間の値も)記録される。メッセージスレッドから呼ぶ。
+    void setRecording (bool on);
+    std::atomic<bool> recording { false };
+
 private:
     void handleAsyncUpdate() override;
+    void parameterValueChanged (int, float) override {}
+    void parameterGestureChanged (int index, bool starting) override;
+    juce::Array<juce::RangedAudioParameter*> recParams;
+    std::atomic<uint32_t> endedMask { 0 };    // 記録中に画面操作でジェスチャーが終わったパラメータ(つかみ直す)
+    std::atomic<int> midiRec { -1 };          // MIDI(G1)の押下: 1=押した 0=離した -1=なし
+    bool selfGesture = false, lastRecMidi = false;
     djfx::Engine engine;
     int midiHeld[64] = {};   // ノートごとの押下状態
     int lastLatency = -1;

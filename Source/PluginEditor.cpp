@@ -887,6 +887,9 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     bReloop = addToggle (ids::loopLatch, "RELOOP / EXIT", ui::amber);
     tSlip = addToggle (ids::slip, "SLIP", ui::amber);
     tQuant = addToggle (ids::quantize, "QUANTIZE", ui::amber);
+    bRec = addAction ("REC", [this] { proc.setRecording (! proc.recording.load()); });
+    bRec->getProperties().set ("accent", (int) ui::amber.getARGB());
+    bRec->getProperties().set ("bold", true);
     quantBeats = std::make_unique<ChoiceGroup> (proc.apvts, ids::quantBeat, StringArray { "1/8", "1/4", "1/2", "1" }, 4, 3);
     addAndMakeVisible (*quantBeats);
 
@@ -907,6 +910,7 @@ void NamiDJFXEditor::timerCallback()
     hRev->setToggleState (raw (ids::jogReverse) > 0.5f, dontSendNotification);
     hLoop->setToggleState (raw (ids::jogLoop) > 0.5f, dontSendNotification);
     hLive->setToggleState (raw (ids::jogResync) > 0.5f, dontSendNotification);
+    bRec->setToggleState (proc.recording.load(), dontSendNotification);
     quantBeats->setAlpha (raw (ids::quantize) > 0.5f ? 1.f : 0.5f);
     repaint (boxC.withTrimmedTop (400));      // 遅れ表示
 }
@@ -962,7 +966,7 @@ void NamiDJFXEditor::paint (Graphics& g)
     g.setFont (lnf.fontBold (1.5f));
     g.drawText ("DJFX Standard", 40, 5, 320, 28, Justification::left, false);
     g.setFont (lnf.font (0.85f)); g.setColour (ui::dim);
-    g.drawText ("MIDI  C1 BACKSPIN / C#1 BRAKE / D1 REVERSE / D#1 SCRATCH / E1 LOOP / F1 BEAT FX / F#1 RESYNC", 330, 12, 630, 14, Justification::right, false);
+    g.drawText ("MIDI  C1 BACKSPIN / C#1 BRAKE / D1 REVERSE / D#1 SCRATCH / E1 LOOP / F1 BEAT FX / F#1 RESYNC / G1 REC", 330, 12, 630, 14, Justification::right, false);
     g.drawText ("BEAT FX x14   SOUND COLOR FX x6   JOG", 40, getHeight() - 26, 500, 14, Justification::left, false);
     g.drawText ("DJFX-STD", getWidth() - 140, getHeight() - 26, 100, 14, Justification::right, false);
 
@@ -1031,6 +1035,8 @@ void NamiDJFXEditor::resized()
     kColor->setBounds (at (boxB, 14, 150, 180, 190));
     kParam->setBounds (at (boxB, 40, 352, 128, 130));
     bLock->setBounds (at (boxB, 6, 500, 196, 28));
+
+    bRec->setBounds (190, 9, 74, 22);
 
     // JOG
     jog->setBounds (at (boxC, 76, 26, 190, 190));

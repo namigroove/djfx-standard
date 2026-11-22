@@ -6,6 +6,39 @@ NamiDJFXProcessor::NamiDJFXProcessor()
                                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "STATE", createLayout())
 {
+    // 記録の対象: 演奏中に動かす操作系(セットアップ用のBPM・出力・先読みは除く)
+    for (auto* id : { &ids::fxOn, &ids::fxType, &ids::bandLow, &ids::bandMid, &ids::bandHi, &ids::fxSync, &ids::fxBeat, &ids::fxTime, &ids::fxLevel,
+                      &ids::xpadTouch, &ids::xpadPos, &ids::colorType, &ids::colorKnob, &ids::colorParam, &ids::centerLock,
+                      &ids::jogBackspin, &ids::jogBrake, &ids::jogReverse, &ids::jogScratch, &ids::jogLoop, &ids::jogSpeed,
+                      &ids::loopLatch, &ids::jogResync })
+        if (auto* prm = apvts.getParameter (id->getParamID())) { recParams.add (prm); prm->addListener (this); }
+}
+
+NamiDJFXProcessor::~NamiDJFXProcessor()
+{
+    cancelPendingUpdate();
+    if (recording.load()) setRecording (false);
+    for (auto* prm : recParams) prm->removeListener (this);
+}
+
+void NamiDJFXProcessor::setRecording (bool on)
+{
+    if (recording.exchange (on) == on) return;
+    selfGesture = true;
+    for (auto* prm : recParams)
+    {
+        if (on) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->getValue()); }   // 今の値も1点として記録させる
+        else prm->endChangeGesture();
+    }
+    selfGesture = false;
+    endedMask = 0;
+}
+
+void NamiDJFXProcessor::parameterGestureChanged (int index, bool starting)
+{
+    if (starting || selfGesture || ! recording.load()) return;
+    for (int k = 0; k < recParams.size(); ++k)
+        if (recParams[k]->getParameterIndex() == index) { endedMask |= (1u << k); triggerAsyncUpdate(); break; }
 }
 
 bool NamiDJFXProcessor::isBusesLayoutSupported (const BusesLayout& l) const
@@ -23,8 +56,22 @@ void NamiDJFXProcessor::prepareToPlay (double sr, int)
 
 void NamiDJFXProcessor::handleAsyncUpdate()
 {
-    setLatencySamples (pendingLatency.load());
-    updateHostDisplay (ChangeDetails().withLatencyChanged (true));
+    if (pendingLatency.load() != getLatencySamples())
+    {
+        setLatencySamples (pendingLatency.load());
+        updateHostDisplay (ChangeDetails().withLatencyChanged (true));
+    }
+    const int m = midiRec.exchange (-1);                       // MIDIのG1を押している間だけ記録
+    if (m >= 0) setRecording (m == 1);
+    // 記録中に画面のつまみを離すとジェスチャーが閉じるので、つかみ直す
+    if (recording.load())
+    {
+        const uint32_t mask = endedMask.exchange (0);
+        selfGesture = true;
+        for (int k = 0; k < recParams.size(); ++k)
+            if (mask & (1u << k)) { recParams[k]->beginChangeGesture(); recParams[k]->setValueNotifyingHost (recParams[k]->getValue()); }
+        selfGesture = false;
+    }
 }
 
 void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -53,6 +100,7 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (midiHeld[4]) mask |= djfx::kMidiLoop;
     if (midiHeld[5]) mask |= djfx::kMidiFx;
     if (midiHeld[6]) mask |= djfx::kMidiResync;       // F#1: ライブ位置へ戻す
+    if ((midiHeld[7] != 0) != lastRecMidi) { lastRecMidi = midiHeld[7] != 0; midiRec = lastRecMidi ? 1 : 0; triggerAsyncUpdate(); }   // G1: 押している間、DAWへ記録
 
     djfx::HostInfo host;
     if (auto* ph = getPlayHead())

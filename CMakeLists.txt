@@ -76,7 +76,7 @@ set_target_properties(ui_snapshot PROPERTIES EXCLUDE_FROM_ALL TRUE)
 juce_add_console_app(proc_test PRODUCT_NAME "proc_test")
 target_sources(proc_test PRIVATE test/proc_test.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
 target_include_directories(proc_test PRIVATE Source)
-target_compile_definitions(proc_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_ALSA=0 JUCE_JACK=0
+target_compile_definitions(proc_test PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_ALSA=0 JUCE_JACK=0
   NAMIDJFX_HAS_FONT=$<BOOL:${HAS_FONT}> JUCE_STANDALONE_APPLICATION=1)
 target_link_libraries(proc_test PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
 if(HAS_FONT)
