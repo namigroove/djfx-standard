@@ -15,6 +15,16 @@ DJミキサー(DJM-A9)とプレーヤー(CDJ-3000)の操作を、VST3で再現�
 配布する場合は、製品名や商標になりうる名前(DJM・CDJ・Pioneer、SPIRAL/HELIX/MOBIUS など)を
 `Source/dsp/Engine.h` の `fxName()` と `colorName()` で別の名前に変えてください。
 
+## ダウンロード
+
+**[最新版をダウンロード(Releases)](https://github.com/namigroove/djfx-standard/releases/latest)**
+
+1. Releases の `Assets` から、お使いのOS用のZIPをダウンロードして展開します。
+2. `DJFX Standard.vst3` を次の場所に置きます。
+   - Windows: `C:\Program Files\Common Files\VST3`
+   - Mac: `/Library/Audio/Plug-Ins/VST3`
+3. DAWでプラグインを再スキャンします。
+
 ## 入っているもの
 
 ### BEAT FX(14種)
