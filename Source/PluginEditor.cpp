@@ -39,6 +39,17 @@ Font NamiLnF::fontBold (float scale) const
     return Font (FontOptions (Font::getDefaultMonospacedFontName(), 11.f * scale, Font::bold));
 }
 
+// 点灯したボタンの縁からにじむ光(内側へ薄くなっていく)
+static void innerGlow (Graphics& g, Rectangle<float> r, float corner, Colour col, float strength = 1.f)
+{
+    for (int i = 0; i < 7; ++i)
+    {
+        const float k = (float) i;
+        g.setColour (col.withAlpha (strength * 0.34f * std::pow (1.f - k / 7.f, 2.2f)));
+        g.drawRoundedRectangle (r.reduced (0.5f + k), std::max (1.f, corner - k * 0.5f), 1.4f);
+    }
+}
+
 // 小さなパッド。点灯中は縁と文字に色が付く。"led"なら左にランプ、"round"なら丸い大ボタン、"bold"なら実機のFREQUENCYボタンのような太い縁。
 void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool hover, bool down)
 {
@@ -55,6 +66,7 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
         auto c = r.getCentre();
         g.setColour (ui::well);   g.fillEllipse (c.x - d / 2 - 3, c.y - d / 2 - 3, d + 6, d + 6);
         g.setColour (ui::padEdge); g.drawEllipse (c.x - d / 2 - 3, c.y - d / 2 - 3, d + 6, d + 6, 1.f);
+        if (lit) for (int i = 4; i >= 1; --i) { g.setColour (accent.withAlpha (0.10f)); g.fillEllipse (c.x - d / 2 - (float) i - 3.f, c.y - d / 2 - (float) i - 3.f, d + 2.f * (float) i + 6.f, d + 2.f * (float) i + 6.f); }
         g.setColour (lit ? accent : ui::line);
         g.fillEllipse (c.x - d / 2, c.y - d / 2, d, d);                 // リングのLED
         const float di = d - 7.f;
@@ -86,7 +98,7 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
         g.setColour (Colour (0xffc4c4c8)); g.fillRoundedRectangle (r, 3.f);
         auto in = r.reduced (2.5f);
         g.setColour (down ? Colour (0xff070708) : ui::padOff); g.fillRoundedRectangle (in, 2.f);
-        if (on) { g.setColour (accent.withAlpha (0.38f)); g.fillRoundedRectangle (in, 2.f); g.setColour (accent.withAlpha (0.9f)); g.drawRoundedRectangle (in, 2.f, 1.f); }
+        if (on) { g.setColour (accent.withAlpha (0.30f)); g.fillRoundedRectangle (in, 2.f); innerGlow (g, in, 2.f, accent, 1.3f); g.setColour (accent.withAlpha (0.9f)); g.drawRoundedRectangle (in, 2.f, 1.f); }
         return;
     }
     if ((bool) b.getProperties().getWithDefault ("cue", false))
@@ -104,6 +116,7 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
     if (on) { g.setColour (accent.withAlpha (bold ? 0.22f : 0.14f)); g.fillRoundedRectangle (r, bold ? 3.f : 2.f); }
     if (bold)
     {
+        if (on) innerGlow (g, r.reduced (1.f), 3.f, accent, 1.4f);
         g.setColour (on ? accent : ui::padEdge);
         g.drawRoundedRectangle (r, 3.f, 2.f);
         g.setColour (on ? accent.withAlpha (0.45f) : Colour (0xff1e1e20));
@@ -111,6 +124,7 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
     }
     else
     {
+        if (on) innerGlow (g, r, 2.f, accent, 1.f);
         g.setColour (on ? accent : (hover ? ui::dim : ui::padEdge));
         g.drawRoundedRectangle (r, 2.f, 1.f);
     }
@@ -152,6 +166,13 @@ void NamiLnF::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     if ((bool) b.getProperties().getWithDefault ("cue", false)) g.setColour (Colour (0xff141414));
     auto area = b.getLocalBounds().reduced (2, 0);
     if ((bool) b.getProperties().getWithDefault ("led", false)) area.removeFromLeft (10);
+    if (on && ! round && ! (bool) b.getProperties().getWithDefault ("cue", false))      // 文字もにじませる
+    {
+        g.setColour (accent.withAlpha (0.28f));
+        for (auto o : { Point<int> (-1, 0), Point<int> (1, 0), Point<int> (0, -1), Point<int> (0, 1) })
+            g.drawText (b.getButtonText(), area.translated (o.x, o.y), Justification::centred, false);
+        g.setColour (on ? accent : ui::text.withAlpha (0.82f));
+    }
     g.drawText (b.getButtonText(), area, Justification::centred, false);
 }
 

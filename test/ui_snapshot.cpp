@@ -9,7 +9,7 @@ int main (int argc, char** argv)
     NamiDJFXProcessor proc;
     // 見栄え確認のため、いくつかの状態にしておく
     auto set = [&] (const juce::ParameterID& id, float v) { auto* p = proc.apvts.getParameter (id.getParamID()); p->setValueNotifyingHost (p->convertTo0to1 (v)); };
-    set (ids::fxOn, 1.f); set (ids::fxType, (float) djfx::kEcho); set (ids::colorType, (float) djfx::kColorFilter); set (ids::colorKnob, -0.4f);
+    set (ids::fxOn, 1.f); set (ids::bandLow, 1.f); set (ids::bandMid, 1.f); set (ids::fxType, (float) djfx::kEcho); set (ids::colorType, (float) djfx::kColorFilter); set (ids::colorKnob, -0.4f);
     set (ids::jogBackspin, 1.f); set (ids::bsBeat, 5.f);   // 1/4. (付点四分)
     // 波形表示の確認用に、ビートっぽい信号を数秒ぶん通しておく
     proc.setPlayConfigDetails (2, 2, 48000.0, 512);
