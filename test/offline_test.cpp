@@ -6,6 +6,7 @@
 #include <xmmintrin.h>
 #include <pmmintrin.h>
 #include "../Source/dsp/Engine.h"
+#include "../Source/dsp/Loudness.h"
 using namespace djfx;
 
 static const double SR = 48000.0;
@@ -602,6 +603,21 @@ int main()
             CHECK (std::fabs (endBeat - std::round (endBeat)) < 0.08, "stop not on beat (%.3f)", endBeat);
             CHECK (len1 >= len0 - 0.03 && len1 < base + 0.55, "stop q length odd");
         }
+    }
+
+    std::printf("[23] ラウドネス(LUFS): 基準信号と、無音のゲート\n");
+    {
+        Loudness ld; ld.prepare (SR);
+        const int N = (int) (SR * 6); std::vector<float> a ((size_t) N);
+        for (int k = 0; k < N; ++k) a[(size_t) k] = 0.1f * (float) std::sin (2 * kPi * 1000.0 * k / SR);   // -20dBFS
+        ld.process (a.data(), a.data(), N);
+        std::printf("  1kHz -20dBFS(ステレオ同一): M %.2f / S %.2f / I %.2f LUFS, ピーク %.1f dB\n", ld.momentary(), ld.shortTerm(), ld.integrated(), ld.peakDb());
+        CHECK (std::fabs (ld.momentary() + 20.0) < 0.3 && std::fabs (ld.shortTerm() + 20.0) < 0.3 && std::fabs (ld.integrated() + 20.0) < 0.3, "lufs reference");
+        std::vector<float> z ((size_t) (SR * 5), 0.f); ld.process (z.data(), z.data(), (int) z.size());   // 無音
+        std::printf("  そのあと5秒無音: M %.1f / I %.2f\n", ld.momentary(), ld.integrated());
+        CHECK (ld.momentary() < -69.f && std::fabs (ld.integrated() + 20.0) < 0.3, "silence gating");
+        ld.reset(); std::vector<float> b ((size_t) N); for (int k = 0; k < N; ++k) b[(size_t) k] = 0.2f * (float) std::sin (2 * kPi * 1000.0 * k / SR);
+        ld.process (b.data(), b.data(), N); CHECK (std::fabs (ld.integrated() + 14.0) < 0.3, "lufs -14");
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASSED", failures, failures == 1 ? "" : "s");

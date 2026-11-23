@@ -190,61 +190,55 @@ static void softShadow (Graphics& g, Point<float> c, float r)
         g.fillEllipse (c.x - r - k + 1.5f, c.y - r - k + 2.8f, (r + k) * 2, (r + k) * 2);
     }
 }
-static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool knurl, bool dimmed)
+static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool ridged, bool dimmed)
 {
+    // 実機(DJM-A9)のつまみ: つや消しの黒い胴、左下に回り込む銀の縁の反射、天面は少しくぼみ、太い白のポインタ。
+    // ridged(COLOR・エフェクト選択)は胴の縁に切り欠きが並ぶ。
     softShadow (g, c, rBody);
-    const float ca = std::sin (angle), sa = -std::cos (angle);       // ポインタの向き
-    auto pointer = [&] (float r0, float r1, Colour col, float w)
+    const float ca = std::sin (angle), sa = -std::cos (angle);
+
+    ColourGradient skirt (Colour (0xff2c2c2f), c.x - rBody * 0.6f, c.y - rBody * 0.8f, Colour (0xff0b0b0c), c.x + rBody * 0.7f, c.y + rBody * 0.9f, true);
+    g.setGradientFill (skirt); g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
+
+    if (ridged)
+        for (int i = 0; i < 16; ++i)                                  // 縁の切り欠き
+        {
+            const float a = MathConstants<float>::twoPi * ((float) i + 0.5f) / 16.f;
+            g.setColour (Colour (0xff09090a));
+            g.fillEllipse (c.x + std::sin (a) * rBody - 2.6f, c.y - std::cos (a) * rBody - 2.6f, 5.2f, 5.2f);
+        }
+    else
+        for (int i = 0; i < 28; ++i)                                  // うっすら見える縦溝
+        {
+            const float a = MathConstants<float>::twoPi * (float) i / 28.f;
+            g.setColour (Colour (0x14ffffff));
+            g.drawLine (c.x + std::sin (a) * (rBody - 3.5f), c.y - std::cos (a) * (rBody - 3.5f),
+                        c.x + std::sin (a) * (rBody - 0.5f), c.y - std::cos (a) * (rBody - 0.5f), 1.f);
+        }
+
+    // 左下の縁に回り込む銀の反射(三日月)
+    const float rr = rBody - 1.2f;
+    auto crescent = [&] (float from, float to, float w, float alpha)
     {
-        g.setColour (Colours::black.withAlpha (0.35f));
-        g.drawLine (c.x + ca * r0 + 1.f, c.y + sa * r0 + 1.6f, c.x + ca * r1 + 1.f, c.y + sa * r1 + 1.6f, w);
-        g.setColour (col);
-        g.drawLine (c.x + ca * r0, c.y + sa * r0, c.x + ca * r1, c.y + sa * r1, w);
+        Path arc; arc.addCentredArc (c.x, c.y, rr, rr, 0.f, from, to, true);
+        g.setColour (Colour (0xfff2f2f5).withAlpha (alpha * (dimmed ? 0.5f : 1.f)));
+        g.strokePath (arc, PathStrokeType (w, PathStrokeType::curved, PathStrokeType::rounded));
     };
+    crescent (3.35f, 5.05f, 1.2f, 0.35f);
+    crescent (3.6f, 4.8f, 2.0f, 0.75f);
+    crescent (3.9f, 4.5f, 2.8f, 1.0f);
 
-    if (knurl)
-    {
-        // 銀: 外周の溝つき胴 → 放射状のヘアラインの天面
-        ColourGradient body (Colour (0xfff0f0f3), c.x - rBody * 0.7f, c.y - rBody * 0.8f, Colour (0xff6c6c72), c.x + rBody * 0.8f, c.y + rBody * 0.9f, false);
-        g.setGradientFill (body); g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
-        for (int i = 0; i < 72; ++i)
-        {
-            const float a = MathConstants<float>::twoPi * (float) i / 72.f;
-            const float lit = 0.5f + 0.5f * std::cos (a + 2.35f);        // 左上ほど明るい
-            g.setColour (Colour::fromFloatRGBA (0.f, 0.f, 0.f, 0.22f + 0.28f * (1.f - lit)));
-            g.drawLine (c.x + std::sin (a) * (rBody - 5.f), c.y - std::cos (a) * (rBody - 5.f),
-                        c.x + std::sin (a) * (rBody - 0.4f), c.y - std::cos (a) * (rBody - 0.4f), 1.5f);
-        }
-        g.setColour (Colour (0xff4a4a4f)); g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.f);
-        const float rt = rBody - 6.f;
-        g.setColour (Colour (0xff2c2c30)); g.fillEllipse (c.x - rt - 1.f, c.y - rt - 1.f, rt * 2 + 2.f, rt * 2 + 2.f);   // 胴と天面の段差
-        for (int i = 0; i < 180; ++i)                                     // 削り出しの放射状の艶(2か所の反射)
-        {
-            const float a = MathConstants<float>::twoPi * (float) i / 180.f;
-            const float v = 0.60f + 0.32f * std::pow (std::fabs (std::cos (a - 0.75f)), 3.f) + 0.015f * std::sin ((float) i * 7.f);
-            g.setColour (Colour::fromFloatRGBA (v, v, v * 1.02f, 1.f));
-            Path w; w.startNewSubPath (c.x, c.y);
-            w.lineTo (c.x + std::sin (a) * rt, c.y - std::cos (a) * rt);
-            g.strokePath (w, PathStrokeType (2.2f));
-        }
-        g.setColour (Colour (0xff5a5a60)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
-        pointer (rBody * 0.18f, rt - 1.f, Colour (0xff111112), 3.2f);
-        return;
-    }
-
-    // 黒い胴 + 銀のリング
-    const float ringW = 2.6f;
-    ColourGradient ring (Colour (0xfffafafb), c.x - rBody, c.y - rBody, Colour (0xff808086), c.x + rBody, c.y + rBody, false);
-    g.setGradientFill (ring); g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
-    if (dimmed) { g.setColour (Colour (0xaa000000)); g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2); }
-    const float rb = rBody - ringW;
-    ColourGradient body (Colour (0xff3e3e42), c.x - rb * 0.55f, c.y - rb * 0.7f, Colour (0xff0d0d0e), c.x + rb * 0.9f, c.y + rb * 1.0f, true);
-    g.setGradientFill (body); g.fillEllipse (c.x - rb, c.y - rb, rb * 2, rb * 2);
-    const float rt = rb * 0.68f;                                       // 天面のくぼみ
-    ColourGradient top (Colour (0xff202023), c.x - rt * 0.4f, c.y - rt * 0.6f, Colour (0xff3a3a3e), c.x + rt * 0.7f, c.y + rt * 0.9f, false);
+    const float rt = rBody * (ridged ? 0.80f : 0.78f);              // 天面
+    ColourGradient top (Colour (0xff303033), c.x - rt * 0.5f, c.y - rt * 0.7f, Colour (0xff0e0e0f), c.x + rt * 0.8f, c.y + rt * 0.9f, true);
     g.setGradientFill (top); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
-    g.setColour (Colour (0x22ffffff)); g.drawEllipse (c.x - rb + 0.5f, c.y - rb + 0.5f, rb * 2 - 1.f, rb * 2 - 1.f, 1.f);   // 縁の反射
-    pointer (rb * 0.14f, rBody - 3.f, dimmed ? ui::dim : ui::text, 3.f);
+    g.setColour (Colour (0xff060607)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
+
+    // 太い白のポインタ(中心から縁近くまで)
+    const float w = ridged ? 4.2f : 3.4f, r0 = rBody * 0.05f, r1 = rBody * 0.93f;
+    g.setColour (Colours::black.withAlpha (0.4f));
+    g.drawLine (c.x + ca * r0 + 1.f, c.y + sa * r0 + 1.6f, c.x + ca * r1 + 1.f, c.y + sa * r1 + 1.6f, w);
+    g.setColour (dimmed ? ui::dim : Colour (0xfff4f4f6));
+    g.drawLine (c.x + ca * r0, c.y + sa * r0, c.x + ca * r1, c.y + sa * r1, w);
 }
 
 void NamiLnF::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float pos, float a0, float a1, Slider& s)
@@ -266,9 +260,11 @@ void NamiLnF::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float p
             Path arc;
             const float from = side ? mid + gap : a0 - 0.05f, to = side ? a1 + 0.05f : mid - gap;
             arc.addCentredArc (c.x, c.y, rOuter - 1.f, rOuter - 1.f, 0.f, from, to, true);
-            g.setColour (ui::text.withAlpha (0.9f));
-            g.strokePath (arc, PathStrokeType (1.6f));
+            g.setColour (Colour (0xffb4b4b9));
+            g.strokePath (arc, PathStrokeType (3.2f));
         }
+        g.setColour (Colour (0xff6a6a6f)); g.fillRoundedRectangle (c.x - 12.f, c.y - rOuter - 3.f, 24.f, 10.f, 2.f);   // LOCK の札
+        g.setColour (Colour (0xff111112)); g.setFont (font (0.62f)); g.drawText ("LOCK", Rectangle<float> (c.x - 12.f, c.y - rOuter - 3.f, 24.f, 10.f), Justification::centred, false);
     }
     else
         for (int i = 0; i <= 10; ++i)   // 実機のような点の目盛り(中央だけ大きい)
@@ -280,7 +276,7 @@ void NamiLnF::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float p
             const float rad = (i == 0 || i == 10 || mid) ? 1.7f : 1.2f;
             g.fillEllipse (c.x + std::sin (a) * rr - rad, c.y - std::cos (a) * rr - rad, rad * 2, rad * 2);
         }
-    drawCap (g, c, knurl ? rBody + 1.f : rBody, a0 + pos * (a1 - a0), knurl, dimmed);
+    drawCap (g, c, knurl ? rBody + 2.f : rBody, a0 + pos * (a1 - a0), knurl, dimmed);
 }
 
 // ------------------------------------------------------------------ Knob
@@ -822,6 +818,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     jog = std::make_unique<JogWheel> (s);
     waveIn = std::make_unique<WaveStrip> (proc, false); waveOut = std::make_unique<WaveStrip> (proc, true);
     addAndMakeVisible (*waveIn); addAndMakeVisible (*waveOut);
+    meter = std::make_unique<LoudnessMeter> (proc); addAndMakeVisible (*meter);
     lcd = std::make_unique<FxDisplay> (proc);
     for (auto* c : { (Component*) fxSel.get(), (Component*) colorTypes.get(), (Component*) latency.get(),
                      (Component*) xpad.get(), (Component*) jog.get(), (Component*) lcd.get() })
@@ -1024,6 +1021,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     addHint (kOut.get(), J ("OUT"), J ("全体の出力レベル"));
     addHint (latency.get(), J ("LOOKAHEAD"), J ("先読み。大きいほど前方向のスクラッチが使えるが、音が遅れる(DAWが補正)"));
     addHint (bRec, J ("REC"), J ("押している間の操作を、DAWのオートメーションに記録する(MIDI G1でも可)"));
+    addHint (meter.get(), J ("LUFS メーター"), J ("出力のラウドネス。M=モメンタリー(0.4秒) S=ショートターム(3秒) I=インテグレート(全体)。クリックでリセット"));
     addHint (waveIn.get(), J ("IN 波形"), J ("入力の波形。上が今、下が約6秒前。黄色い線は再生ヘッド"));
     addHint (waveOut.get(), J ("OUT 波形"), J ("エフェクト後の波形"));
     addMouseListener (this, true);
@@ -1103,6 +1101,41 @@ void WaveStrip::paint (Graphics& g)
     g.drawText ("-6s", getLocalBounds().removeFromBottom (14), Justification::centred, false);
 }
 
+void LoudnessMeter::paint (Graphics& g)
+{
+    auto* l = dynamic_cast<NamiLnF*> (&getLookAndFeel());
+    const float m = proc.lufsM.load(), sT = proc.lufsS.load(), iT = proc.lufsI.load(), pk = proc.peakDb.load();
+    auto txt = [] (float v) { return v < -70.f ? String ("--.-") : String (v, 1); };
+
+    // 横メーター(モメンタリー, -40〜0 LUFS)。実機のレベルメーターのように、点灯する小さな区画
+    const Rectangle<float> bar (0.f, 4.f, 230.f, 12.f);
+    const int segs = 40; const float segW = bar.getWidth() / segs;
+    for (int k = 0; k < segs; ++k)
+    {
+        const float v = -40.f + (float) k;                              // この区画が点く下限(LUFS)
+        const bool lit = m > v;
+        Colour c = v < -14.f ? Colour (0xff2fc24a) : (v < -9.f ? Colour (0xffe6c229) : Colour (0xffe8452c));
+        g.setColour (lit ? c : c.withAlpha (0.16f));
+        g.fillRect (bar.getX() + (float) k * segW + 0.5f, bar.getY(), segW - 1.f, bar.getHeight());
+    }
+    if (l != nullptr) g.setFont (l->font (0.7f));
+    g.setColour (ui::dim);
+    for (int v : { -40, -30, -20, -14, -9, 0 })
+        g.drawText (String (v), Rectangle<float> (bar.getX() + (float) (v + 40) * segW - 12.f, bar.getBottom() + 1.f, 24.f, 10.f), Justification::centred, false);
+
+    if (l != nullptr) g.setFont (l->font (0.95f));
+    auto num = [&] (const String& tag, float v, float x, bool strong)
+    {
+        g.setColour (ui::dim); g.drawText (tag, Rectangle<float> (x, 2.f, 16.f, 16.f), Justification::centredLeft, false);
+        g.setColour (strong ? ui::text : ui::text.withAlpha (0.8f));
+        g.drawText (txt (v), Rectangle<float> (x + 14.f, 2.f, 40.f, 16.f), Justification::centredRight, false);
+    };
+    num ("M", m, 244.f, true); num ("S", sT, 306.f, false); num ("I", iT, 368.f, true);
+    g.setColour (ui::dim); g.drawText ("LUFS", Rectangle<float> (428.f, 2.f, 34.f, 16.f), Justification::centredLeft, false);
+    g.setColour (pk > -0.1f ? Colour (0xffe8452c) : ui::text.withAlpha (0.8f));
+    g.drawText ("PEAK " + (pk < -110.f ? String ("--.-") : String (pk, 1)) + " dB", Rectangle<float> (466.f, 2.f, 96.f, 16.f), Justification::centredLeft, false);
+}
+
 // 面板の金属テクスチャ(粒状のノイズ + 横方向のヘアライン)。毎回同じ模様になるよう乱数は固定。
 // 面板は単色(グラデーション・質感なし)
 void NamiDJFXEditor::buildFace (int w, int h)
@@ -1141,9 +1174,8 @@ void NamiDJFXEditor::paint (Graphics& g)
     g.setFont (lnf.fontBold (1.5f));
     g.drawText ("DJFX Standard", 40, 5, 320, 28, Justification::left, false);
     g.setFont (lnf.font (0.85f)); g.setColour (ui::dim);
-    g.drawText ("MIDI  C1 BACKSPIN / C#1 BRAKE / D1 REVERSE / D#1 SCRATCH / E1 LOOP / F1 BEAT FX / F#1 RESYNC / G1 REC", 330, 12, 630, 14, Justification::right, false);
     if (hint.first.isEmpty())
-        g.drawText ("BEAT FX x14   SOUND COLOR FX x6   JOG", 40, getHeight() - 26, 500, 14, Justification::left, false);
+        g.drawText ("MIDI  C1 BACKSPIN / C#1 BRAKE / D1 REVERSE / D#1 SCRATCH / E1 LOOP / F1 BEAT FX / F#1 RESYNC / G1 REC", 40, getHeight() - 26, 800, 14, Justification::left, false);
     else
     {   // 触っている部品の簡易説明
         g.setFont (lnf.fontJp (0.85f)); g.setColour (ui::teal);
@@ -1218,6 +1250,7 @@ void NamiDJFXEditor::resized()
     bLock->setBounds (at (boxB, 6, 500, 196, 28));
 
     bRec->setBounds (190, 9, 74, 22);
+    meter->setBounds (300, 8, 570, 26);
 
     // JOG
     jog->setBounds (at (boxC, 76, 26, 190, 190));

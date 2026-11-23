@@ -51,6 +51,7 @@ void NamiDJFXProcessor::prepareToPlay (double sr, int)
 {
     engine.prepare (sr);
     hop = std::max (1, (int) (sr / 100.0));
+    loud.prepare (sr);
     accIn = accOut = 0.f; cntIn = cntOut = 0;
     for (auto& a : waveIn) a.store (0.f);
     for (auto& a : waveOut) a.store (0.f);
@@ -146,6 +147,9 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         engine.process (L, tmp.data(), n, params, host, mask);
     }
     pushPeaks (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n, accOut, cntOut, waveOut, waveWOut);
+    if (resetLoud.exchange (false)) loud.reset();
+    loud.process (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n);
+    lufsM = loud.momentary(); lufsS = loud.shortTerm(); lufsI = loud.integrated(); peakDb = loud.peakDb();
     jogLagMs = (float) (engine.jogLagSamples() / std::max (1.0, getSampleRate()) * 1000.0);
     double nearS = 0, farS = 0;
     if (engine.jogLoopRange (nearS, farS)) { loopNearMs = (float) (nearS * 1000.0 / getSampleRate()); loopFarMs = (float) (farS * 1000.0 / getSampleRate()); }

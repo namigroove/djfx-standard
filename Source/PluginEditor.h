@@ -192,6 +192,19 @@ private:
     static constexpr float kSpanMs = 6000.f;
 };
 
+// 画面上部のラウドネス表示: モメンタリーLUFSの横メーター(実機風の分割)と、M/S/I・ピークの数値。クリックでインテグレートとピークをリセット
+class LoudnessMeter : public juce::Component, private juce::Timer
+{
+public:
+    explicit LoudnessMeter (NamiDJFXProcessor& p) : proc (p) { startTimerHz (20); }
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override { proc.resetLoud = true; }
+private:
+    void timerCallback() override { repaint(); }
+    NamiDJFXProcessor& proc;
+    float holdDb = -120.f; int holdAge = 0;
+};
+
 class NamiDJFXEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -230,6 +243,7 @@ private:
     std::unique_ptr<XPad> xpad;
     std::unique_ptr<JogWheel> jog;
     std::unique_ptr<WaveStrip> waveIn, waveOut;
+    std::unique_ptr<LoudnessMeter> meter;
     std::unique_ptr<FxDisplay> lcd;
     std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kRelease, kLoop, kBpm, kOut, kInertia;
     juce::OwnedArray<juce::TextButton> toggles;
