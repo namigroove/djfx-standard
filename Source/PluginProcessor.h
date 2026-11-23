@@ -42,6 +42,8 @@ public:
     std::atomic<float> waveIn[kWaveSize], waveOut[kWaveSize];
     std::atomic<int> waveWIn { 0 }, waveWOut { 0 };
     std::atomic<float> lufsM { -200.f }, lufsS { -200.f }, lufsI { -200.f }, peakDb { -120.f };   // 出力のラウドネス(UIが読む)
+    std::atomic<float> lufsInM { -200.f }, lufsInI { -200.f };                                    // 入力(エフェクト前)
+    std::atomic<float> vuL { 0.f }, vuR { 0.f };                                                  // 出力ピーク(UIが読んで0に戻す)
     std::atomic<bool> resetLoud { false };
     std::atomic<float> loopNearMs { -1.f }, loopFarMs { -1.f };    // ループ中: ライブからの距離(ms)。ループ外は-1
 
@@ -56,7 +58,7 @@ private:
     void pushPeaks (const float* L, const float* R, int n, float& acc, int& cnt, std::atomic<float>* ring, std::atomic<int>& w);
     float accIn = 0.f, accOut = 0.f; int cntIn = 0, cntOut = 0, hop = 480;
     djfx::Engine engine;
-    djfx::Loudness loud;
+    djfx::Loudness loud, loudIn;
     int midiHeld[64] = {};   // ノートごとの押下状態
     int lastLatency = -1;
     std::atomic<int> pendingLatency { 0 };

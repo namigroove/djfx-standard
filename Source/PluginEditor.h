@@ -192,13 +192,26 @@ private:
     static constexpr float kSpanMs = 6000.f;
 };
 
+// BEAT FX の欄に置く縦型のレベルメーター(実機のチャンネルメーター風)。出力のL/Rのピーク
+class VuMeter : public juce::Component, private juce::Timer
+{
+public:
+    explicit VuMeter (NamiDJFXProcessor& p) : proc (p) { startTimerHz (30); }
+    void paint (juce::Graphics&) override;
+private:
+    void timerCallback() override;
+    NamiDJFXProcessor& proc;
+    float dbL = -60.f, dbR = -60.f, holdL = -60.f, holdR = -60.f; int ageL = 0, ageR = 0;
+};
+
 // 画面上部のラウドネス表示: モメンタリーLUFSの横メーター(実機風の分割)と、M/S/I・ピークの数値。クリックでインテグレートとピークをリセット
 class LoudnessMeter : public juce::Component, private juce::Timer
 {
 public:
     explicit LoudnessMeter (NamiDJFXProcessor& p) : proc (p) { startTimerHz (20); }
     void paint (juce::Graphics&) override;
-    void mouseDown (const juce::MouseEvent&) override { proc.resetLoud = true; }
+    void mouseDown (const juce::MouseEvent&) override;
+    float target() const { return (float) (double) proc.apvts.state.getProperty ("lufsTarget", -14.0); }
 private:
     void timerCallback() override { repaint(); }
     NamiDJFXProcessor& proc;
@@ -244,6 +257,7 @@ private:
     std::unique_ptr<JogWheel> jog;
     std::unique_ptr<WaveStrip> waveIn, waveOut;
     std::unique_ptr<LoudnessMeter> meter;
+    std::unique_ptr<VuMeter> vu;
     std::unique_ptr<FxDisplay> lcd;
     std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kRelease, kLoop, kBpm, kOut, kInertia;
     juce::OwnedArray<juce::TextButton> toggles;

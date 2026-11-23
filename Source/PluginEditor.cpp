@@ -819,6 +819,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     waveIn = std::make_unique<WaveStrip> (proc, false); waveOut = std::make_unique<WaveStrip> (proc, true);
     addAndMakeVisible (*waveIn); addAndMakeVisible (*waveOut);
     meter = std::make_unique<LoudnessMeter> (proc); addAndMakeVisible (*meter);
+    vu = std::make_unique<VuMeter> (proc); addAndMakeVisible (*vu);
     lcd = std::make_unique<FxDisplay> (proc);
     for (auto* c : { (Component*) fxSel.get(), (Component*) colorTypes.get(), (Component*) latency.get(),
                      (Component*) xpad.get(), (Component*) jog.get(), (Component*) lcd.get() })
@@ -1021,7 +1022,8 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     addHint (kOut.get(), J ("OUT"), J ("全体の出力レベル"));
     addHint (latency.get(), J ("LOOKAHEAD"), J ("先読み。大きいほど前方向のスクラッチが使えるが、音が遅れる(DAWが補正)"));
     addHint (bRec, J ("REC"), J ("押している間の操作を、DAWのオートメーションに記録する(MIDI G1でも可)"));
-    addHint (meter.get(), J ("LUFS メーター"), J ("出力のラウドネス。M=モメンタリー(0.4秒) S=ショートターム(3秒) I=インテグレート(全体)。クリックでリセット"));
+    addHint (meter.get(), J ("LUFS メーター"), J ("出力のラウドネス。M=0.4秒 S=3秒 I=全体。細い帯は入力。白線が目標。クリックでリセット、右クリックで目標を選ぶ"));
+    addHint (vu.get(), J ("レベルメーター"), J ("出力のピーク(L/R)。0dBを超えるとクリップに近い"));
     addHint (waveIn.get(), J ("IN 波形"), J ("入力の波形。上が今、下が約6秒前。黄色い線は再生ヘッド"));
     addHint (waveOut.get(), J ("OUT 波形"), J ("エフェクト後の波形"));
     addMouseListener (this, true);
@@ -1101,39 +1103,105 @@ void WaveStrip::paint (Graphics& g)
     g.drawText ("-6s", getLocalBounds().removeFromBottom (14), Justification::centred, false);
 }
 
+void LoudnessMeter::mouseDown (const MouseEvent& e)
+{
+    if (e.mods.isPopupMenu())
+    {
+        PopupMenu m;
+        m.addSectionHeader (J ("目標ラウドネス(メーターの線)"));
+        const std::pair<double, const char*> presets[] = { { -9.0, "-9 LUFS  クラブ・DJ向け" }, { -14.0, "-14 LUFS  配信(Spotify・YouTube)" },
+                                                          { -16.0, "-16 LUFS  Apple Music・ポッドキャスト" }, { -23.0, "-23 LUFS  放送(EBU R128)" } };
+        const double cur = (double) target();
+        for (int i = 0; i < 4; ++i) m.addItem (i + 1, J (presets[i].second), true, std::fabs (cur - presets[i].first) < 0.01);
+        m.addSeparator(); m.addItem (10, J ("インテグレートとピークをリセット"));
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this), [this, presets] (int r)
+        {
+            if (r >= 1 && r <= 4) proc.apvts.state.setProperty ("lufsTarget", presets[r - 1].first, nullptr);
+            else if (r == 10) proc.resetLoud = true;
+        });
+        return;
+    }
+    proc.resetLoud = true;
+}
+
 void LoudnessMeter::paint (Graphics& g)
 {
     auto* l = dynamic_cast<NamiLnF*> (&getLookAndFeel());
     const float m = proc.lufsM.load(), sT = proc.lufsS.load(), iT = proc.lufsI.load(), pk = proc.peakDb.load();
+    const float inM = proc.lufsInM.load(), inI = proc.lufsInI.load(), tg = target();
     auto txt = [] (float v) { return v < -70.f ? String ("--.-") : String (v, 1); };
 
-    // 横メーター(モメンタリー, -40〜0 LUFS)。実機のレベルメーターのように、点灯する小さな区画
-    const Rectangle<float> bar (0.f, 4.f, 230.f, 12.f);
-    const int segs = 40; const float segW = bar.getWidth() / segs;
-    for (int k = 0; k < segs; ++k)
+    // 横メーター(-40〜0 LUFS)。上が入力(細い)、下が出力。実機のレベルメーターのように小さな区画で点灯
+    const int segs = 40; const float W = 230.f, segW = W / segs;
+    auto drawBar = [&] (float y, float h, float v, bool dim)
     {
-        const float v = -40.f + (float) k;                              // この区画が点く下限(LUFS)
-        const bool lit = m > v;
-        Colour c = v < -14.f ? Colour (0xff2fc24a) : (v < -9.f ? Colour (0xffe6c229) : Colour (0xffe8452c));
-        g.setColour (lit ? c : c.withAlpha (0.16f));
-        g.fillRect (bar.getX() + (float) k * segW + 0.5f, bar.getY(), segW - 1.f, bar.getHeight());
-    }
+        for (int k = 0; k < segs; ++k)
+        {
+            const float t = -40.f + (float) k;
+            Colour c = t < tg - 5.f ? Colour (0xff2fc24a) : (t < tg + 1.f ? Colour (0xffe6c229) : Colour (0xffe8452c));
+            g.setColour ((v > t ? c : c.withAlpha (0.14f)).withMultipliedAlpha (dim ? 0.6f : 1.f));
+            g.fillRect ((float) k * segW + 0.5f, y, segW - 1.f, h);
+        }
+    };
+    drawBar (2.f, 6.f, inM, true);
+    drawBar (10.f, 9.f, m, false);
+    const float tx = (tg + 40.f) * segW;                                   // 目標の線
+    g.setColour (ui::text); g.fillRect (tx - 0.5f, 0.f, 1.5f, 21.f);
     if (l != nullptr) g.setFont (l->font (0.7f));
     g.setColour (ui::dim);
-    for (int v : { -40, -30, -20, -14, -9, 0 })
-        g.drawText (String (v), Rectangle<float> (bar.getX() + (float) (v + 40) * segW - 12.f, bar.getBottom() + 1.f, 24.f, 10.f), Justification::centred, false);
+    for (int v : { -40, -30, -20, -10, 0 })
+        g.drawText (String (v), Rectangle<float> ((float) (v + 40) * segW - 12.f, 20.f, 24.f, 10.f), Justification::centred, false);
 
     if (l != nullptr) g.setFont (l->font (0.95f));
     auto num = [&] (const String& tag, float v, float x, bool strong)
     {
         g.setColour (ui::dim); g.drawText (tag, Rectangle<float> (x, 2.f, 16.f, 16.f), Justification::centredLeft, false);
-        g.setColour (strong ? ui::text : ui::text.withAlpha (0.8f));
+        const bool ok = tag == "I" && v > -70.f && std::fabs (v - tg) <= 1.f;       // 目標の±1LU以内なら緑
+        g.setColour (ok ? Colour (0xff2fc24a) : (strong ? ui::text : ui::text.withAlpha (0.8f)));
         g.drawText (txt (v), Rectangle<float> (x + 14.f, 2.f, 40.f, 16.f), Justification::centredRight, false);
     };
     num ("M", m, 244.f, true); num ("S", sT, 306.f, false); num ("I", iT, 368.f, true);
     g.setColour (ui::dim); g.drawText ("LUFS", Rectangle<float> (428.f, 2.f, 34.f, 16.f), Justification::centredLeft, false);
     g.setColour (pk > -0.1f ? Colour (0xffe8452c) : ui::text.withAlpha (0.8f));
-    g.drawText ("PEAK " + (pk < -110.f ? String ("--.-") : String (pk, 1)) + " dB", Rectangle<float> (466.f, 2.f, 96.f, 16.f), Justification::centredLeft, false);
+    g.drawText ("PEAK " + (pk < -110.f ? String ("--.-") : String (pk, 1)), Rectangle<float> (466.f, 2.f, 80.f, 16.f), Justification::centredLeft, false);
+    if (l != nullptr) g.setFont (l->font (0.8f));
+    g.setColour (ui::dim);
+    g.drawText ("IN  M " + txt (inM) + "  I " + txt (inI), Rectangle<float> (244.f, 18.f, 190.f, 12.f), Justification::centredLeft, false);
+    g.drawText ("TARGET " + String ((int) std::lround (tg)), Rectangle<float> (440.f, 18.f, 110.f, 12.f), Justification::centredLeft, false);
+}
+
+void VuMeter::timerCallback()
+{
+    auto toDb = [] (float v) { return v > 1e-5f ? 20.f * std::log10 (v) : -60.f; };
+    const float pl = toDb (proc.vuL.exchange (0.f)), pr = toDb (proc.vuR.exchange (0.f));
+    dbL = pl > dbL ? pl : std::max (pl, dbL - 1.2f);                       // 上がりは即、下がりはゆっくり
+    dbR = pr > dbR ? pr : std::max (pr, dbR - 1.2f);
+    if (dbL >= holdL) { holdL = dbL; ageL = 0; } else if (++ageL > 45) holdL = std::max (dbL, holdL - 0.8f);
+    if (dbR >= holdR) { holdR = dbR; ageR = 0; } else if (++ageR > 45) holdR = std::max (dbR, holdR - 0.8f);
+    repaint();
+}
+
+void VuMeter::paint (Graphics& g)
+{
+    auto* l = dynamic_cast<NamiLnF*> (&getLookAndFeel());
+    const int segs = 14;                                                    // +12〜-30dB を3dBごと
+    const float top = 4.f, bottom = (float) getHeight() - 16.f, segH = (bottom - top) / segs;
+    if (l != nullptr) g.setFont (l->font (0.7f));
+    for (int k = 0; k < segs; ++k)
+    {
+        const float db = 12.f - 3.f * (float) k;                            // この区画の上端
+        const float y = top + (float) k * segH;
+        Colour c = db > 9.f ? Colour (0xffe8452c) : (db > 3.f ? Colour (0xfff08a1c) : (db > -2.f ? Colour (0xffe6c229) : Colour (0xff2fc24a)));
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const float v = ch == 0 ? dbL : dbR, hold = ch == 0 ? holdL : holdR;
+            const bool lit = v > db - 3.f, peak = hold > db - 3.f && hold <= db;
+            g.setColour (c.withAlpha (lit || peak ? 1.f : 0.14f));
+            g.fillRect (20.f + (float) ch * 8.f, y + 0.5f, 6.f, segH - 1.5f);
+        }
+        if (k % 2 == 0) { g.setColour (ui::text.withAlpha (0.8f)); g.drawText (String ((int) db), Rectangle<float> (0.f, y - 1.f, 18.f, segH), Justification::centredRight, false); }
+    }
+    g.setColour (ui::dim); g.drawText ("dB", Rectangle<float> (0.f, bottom + 1.f, 38.f, 12.f), Justification::centred, false);
 }
 
 // 面板の金属テクスチャ(粒状のノイズ + 横方向のヘアライン)。毎回同じ模様になるよう乱数は固定。
@@ -1250,7 +1318,8 @@ void NamiDJFXEditor::resized()
     bLock->setBounds (at (boxB, 6, 500, 196, 28));
 
     bRec->setBounds (190, 9, 74, 22);
-    meter->setBounds (300, 8, 570, 26);
+    meter->setBounds (300, 4, 560, 32);
+    vu->setBounds (at (boxA, 372, 188, 40, 204));
 
     // JOG
     jog->setBounds (at (boxC, 76, 26, 190, 190));

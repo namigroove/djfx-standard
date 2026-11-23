@@ -51,7 +51,7 @@ void NamiDJFXProcessor::prepareToPlay (double sr, int)
 {
     engine.prepare (sr);
     hop = std::max (1, (int) (sr / 100.0));
-    loud.prepare (sr);
+    loud.prepare (sr); loudIn.prepare (sr);
     accIn = accOut = 0.f; cntIn = cntOut = 0;
     for (auto& a : waveIn) a.store (0.f);
     for (auto& a : waveOut) a.store (0.f);
@@ -138,6 +138,9 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     float* L = buffer.getWritePointer (0);
     pushPeaks (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n, accIn, cntIn, waveIn, waveWIn);
+    if (resetLoud.load()) loudIn.reset();
+    loudIn.process (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n);
+    lufsInM = loudIn.momentary(); lufsInI = loudIn.integrated();
     if (nCh >= 2)
         engine.process (L, buffer.getWritePointer (1), n, params, host, mask);
     else
@@ -147,8 +150,14 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         engine.process (L, tmp.data(), n, params, host, mask);
     }
     pushPeaks (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n, accOut, cntOut, waveOut, waveWOut);
-    if (resetLoud.exchange (false)) loud.reset();
+    if (resetLoud.exchange (false)) loud.reset();   // 入力側は上で先にリセット済み
     loud.process (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n);
+    {
+        float pl = 0.f, pr = 0.f; const float* R2 = nCh >= 2 ? buffer.getReadPointer (1) : L;
+        for (int i = 0; i < n; ++i) { pl = std::max (pl, std::fabs (L[i])); pr = std::max (pr, std::fabs (R2[i])); }
+        if (pl > vuL.load()) vuL = pl;
+        if (pr > vuR.load()) vuR = pr;
+    }
     lufsM = loud.momentary(); lufsS = loud.shortTerm(); lufsI = loud.integrated(); peakDb = loud.peakDb();
     jogLagMs = (float) (engine.jogLagSamples() / std::max (1.0, getSampleRate()) * 1000.0);
     double nearS = 0, farS = 0;
