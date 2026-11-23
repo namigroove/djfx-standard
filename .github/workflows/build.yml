@@ -2,9 +2,7 @@ name: build
 
 on:
   push:
-    branches: ['**']
-    tags: ['v*']
-  pull_request:
+      pull_request:
   workflow_dispatch:
 
 jobs:
@@ -48,25 +46,35 @@ jobs:
           path: build/NamiDJFX_artefacts/**/VST3/DJFX Standard.vst3
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: vst3
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - name: バージョン確認
+        run: |
+          echo "TAG=$(tr -d '[:space:]' < VERSION)" >> $GITHUB_ENV
+          if gh release view "$(tr -d '[:space:]' < VERSION)" >/dev/null 2>&1; then echo SKIP=1 >> $GITHUB_ENV; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - if: env.SKIP != '1'
+        uses: actions/download-artifact@v4
         with:
           path: art
       - name: ZIP
+        if: env.SKIP != '1'
         run: |
           cd art
-          for d in DJFX-Standard-*; do (cd "$d" && zip -r "../$d-${GITHUB_REF_NAME}.zip" .); done
+          for d in DJFX-Standard-*; do (cd "$d" && zip -r "../$d-${TAG}.zip" .); done
       - name: Release
+        if: env.SKIP != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" art/*.zip --repo "$GITHUB_REPOSITORY" \
-            --title "DJFX Standard $GITHUB_REF_NAME (beta)" --prerelease \
+          gh release create "$TAG" art/*.zip --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            --title "DJFX Standard $TAG (beta)" --prerelease \
             --notes "現場でのDJ操作を、実機がなくてもDAW上でデモンストレーションできたらいいなと思って作りました。DJMのエフェクトとCDJのジョグ操作を再現するVST3です。
 
           - Windows: DJFX-Standard-windows-x64 の ZIP を展開し、DJFX Standard.vst3 を C:\\Program Files\\Common Files\\VST3 に置く
