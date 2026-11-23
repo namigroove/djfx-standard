@@ -11,7 +11,7 @@ NAMI_ID (colorType); NAMI_ID (colorKnob); NAMI_ID (colorParam); NAMI_ID (centerL
 NAMI_ID (jogBackspin); NAMI_ID (jogBrake); NAMI_ID (jogReverse); NAMI_ID (jogScratch); NAMI_ID (jogLoop);
 NAMI_ID (jogSpeed); NAMI_ID (bsTime); NAMI_ID (bsRate); NAMI_ID (brakeTime); NAMI_ID (loopBeat); NAMI_ID (jogLatency);
 NAMI_ID (bpm); NAMI_ID (outGain); NAMI_ID (bsBeat); NAMI_ID (brakeBeat);
-NAMI_ID (releaseTime); NAMI_ID (releaseBeat); NAMI_ID (slip); NAMI_ID (quantize); NAMI_ID (quantBeat); NAMI_ID (loopLatch); NAMI_ID (jogResync);
+NAMI_ID (releaseTime); NAMI_ID (releaseBeat); NAMI_ID (slip); NAMI_ID (quantize); NAMI_ID (quantBeat); NAMI_ID (loopLatch); NAMI_ID (jogResync); NAMI_ID (inertia); NAMI_ID (pitchLock); NAMI_ID (stopQuant);
 #undef NAMI_ID
 }
 
@@ -78,6 +78,9 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     p.push_back (std::make_unique<AudioParameterChoice> (ids::quantBeat, "Quantize Beat", StringArray { "1/8", "1/4", "1/2", "1" }, 3));
     boolP (ids::loopLatch, "Loop Reloop/Exit", false);
     boolP (ids::jogResync, "Resync to Live", false);
+    floatP (ids::inertia, "Inertia", { 0.f, 3000.f, 0.f, 0.5f }, 400.f, "ms");
+    boolP (ids::pitchLock, "Key Lock", false);
+    boolP (ids::stopQuant, "Stop Quantize", false);
     floatP (ids::bpm, "BPM (host unknown)", { 30.f, 300.f }, 120.f);
     floatP (ids::outGain, "Output", { -24.f, 6.f }, 0.f, "dB");
     return { p.begin(), p.end() };
@@ -98,6 +101,7 @@ inline djfx::Params readParams (juce::AudioProcessorValueTreeState& s)
     p.backspinTimeMs = f (ids::bsTime);      p.backspinRate = f (ids::bsRate);       p.brakeTimeMs = f (ids::brakeTime);
     p.loopBeat = f (ids::loopBeat);
     p.releaseTimeMs = f (ids::releaseTime);  p.releaseBeats = kNoteBeats[juce::jlimit (0, kNumNotes - 1, (int) f (ids::releaseBeat))];
+    p.inertiaMs = f (ids::inertia); p.pitchLock = f (ids::pitchLock) > 0.5f; p.stopQuant = f (ids::stopQuant) > 0.5f;
     p.slip = f (ids::slip) > 0.5f;           p.quantize = f (ids::quantize) > 0.5f;
     p.quantBeats = kQuantBeats[juce::jlimit (0, 3, (int) f (ids::quantBeat))];
     p.loopLatch = f (ids::loopLatch) > 0.5f; p.jogResync = f (ids::jogResync) > 0.5f;

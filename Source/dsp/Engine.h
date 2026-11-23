@@ -89,6 +89,9 @@ struct Params
     bool  jogResync = false;   // 遅れたままの再生をライブ位置へ戻す
     bool  quantize = false;    // BACKSPIN/BRAKE/REVERSE/LOOPの開始と、SLIP OFFの遅れをDAWの拍に揃える
     float quantBeats = 1.f;    // 1/8, 1/4, 1/2, 1
+    bool  stopQuant = false;   // BACKSPIN/BRAKEが止まる瞬間を、DAWの拍(quantBeatsの目盛り)に揃える(止まるまでの時間を次の目盛りまで延ばす)
+    float inertiaMs = 0.f;     // スクラッチを離したあと等速へ戻るまでの慣性の長さ(0=なし)
+    bool  pitchLock = false;   // 速度を変えても音程を変えない
     float jogLatencyMs = 0.f;  // 前方向スクラッチ用の先読み(0なら遅延なし)
 
     float bpmFallback = 120.f;
@@ -167,6 +170,7 @@ public:
 
     double jogLagSamples() const { return jog.lagSamples(); }
     bool jogLoopRange (double& nearS, double& farS) const { return jog.loopRangeLag (nearS, farS); }
+    bool prevBs = false, prevBr = false; float latchBs = 0.f, latchBr = 0.f;
     bool jogEngaged() const { return jog.engaged(); }
     static int latencyFor (float ms, double sr) { return (int) (ms * 0.001 * sr); }
 
@@ -223,6 +227,27 @@ private:
         auto beatMs = [bpm] (float beats, float ms) { return beats > 0.f ? (float) std::clamp (beats * 60000.0 / bpm, 20.0, 30000.0) : ms; };
         jp.backspinTimeMs = beatMs (p.backspinBeats, p.backspinTimeMs); jp.backspinRate = p.backspinRate;
         jp.brakeTimeMs = beatMs (p.brakeBeats, p.brakeTimeMs);
+        // 停止の拍クオンタイズ: 押した瞬間に「止まる位置」が次の拍の目盛りに乗るよう長さを決め、押している間は保つ
+        {
+            auto latch = [&] (bool on, bool& prev, float& latched, float baseMs)
+            {
+                if (on && ! prev)
+                {
+                    latched = baseMs;
+                    if (p.stopQuant && host.playing && host.ppq >= 0.0 && p.quantBeats > 0.f)
+                    {
+                        const double gq = (double) p.quantBeats, end0 = host.ppq + (double) baseMs * 0.001 * bpm / 60.0;
+                        const double end = std::ceil (end0 / gq - 1e-6) * gq;
+                        latched = (float) std::clamp ((end - host.ppq) * 60000.0 / bpm, 20.0, 30000.0);
+                    }
+                }
+                prev = on;
+                return on ? latched : baseMs;
+            };
+            jp.backspinTimeMs = latch (p.jogBackspin, prevBs, latchBs, jp.backspinTimeMs);
+            jp.brakeTimeMs    = latch (p.jogBrake,    prevBr, latchBr, jp.brakeTimeMs);
+        }
+        jp.inertiaMs = p.inertiaMs; jp.pitchLock = p.pitchLock;
         jp.loopBeats = (float) beatListFor (kEcho).v[beatIndex (kEcho, p.loopBeat)];
         jp.bpm = bpm;
         jp.latencySamples = (int) (p.jogLatencyMs * 0.001f * sr);

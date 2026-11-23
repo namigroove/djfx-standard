@@ -806,6 +806,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     kLoop = mk (ids::loopBeat, "LOOP BEAT", [this] { return String (djfx::beatLabel (djfx::kEcho, raw (ids::loopBeat))); }, "1/16", "16", false, true);
     kLoop->slider.stepCount = [] { return djfx::beatListFor (djfx::kEcho).n; };
     kBpm = mk (ids::bpm, "BPM (NO HOST)", [this] { return String ((int) raw (ids::bpm)); }, "30", "300");
+    kInertia = mk (ids::inertia, "INERTIA", [this] { return raw (ids::inertia) < 1.f ? String ("OFF") : String ((int) raw (ids::inertia)) + "ms"; }, "OFF", "3s");
     kOut = mk (ids::outGain, "OUT", [this] { return String (raw (ids::outGain), 1) + "dB"; }, "-24", "+6");
 
     // ---- 数字入力欄(単位は外) と 右クリックの音符メニュー(その時のBPMでmsに直す)
@@ -866,6 +867,8 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
             setParamValue (proc.apvts, ids::fxSync, 1.f);
         });
     };
+    kInertia->makeEditable ("ms", [this] { return String ((int) raw (ids::inertia)); },
+                           [this] (double v) { setParamValue (proc.apvts, ids::inertia, (float) jlimit (0.0, 3000.0, v)); });
     kBpm->makeEditable ("", [this] { return String ((int) std::lround (raw (ids::bpm))); },
                         [this] (double v) { setParamValue (proc.apvts, ids::bpm, (float) jlimit (30.0, 300.0, v)); });
 
@@ -884,6 +887,8 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     bReloop = addToggle (ids::loopLatch, "RELOOP / EXIT", ui::amber);
     tSlip = addToggle (ids::slip, "SLIP", ui::amber);
     tQuant = addToggle (ids::quantize, "QUANTIZE", ui::amber);
+    tStopQ = addToggle (ids::stopQuant, "STOP Q", ui::amber);
+    tKeyLock = addToggle (ids::pitchLock, "KEY LOCK", ui::teal);
     bRec = addAction ("REC", [this] { proc.setRecording (! proc.recording.load()); });
     bRec->getProperties().set ("accent", (int) ui::amber.getARGB());
     bRec->getProperties().set ("bold", true);
@@ -899,7 +904,7 @@ void NamiDJFXEditor::timerCallback()
 {
     const bool sync = raw (ids::fxSync) > 0.5f;
     kTime->slider.setAlpha (sync ? 0.55f : 1.f);
-    for (auto* k : { kTime.get(), kLevel.get(), kColor.get(), kParam.get(), kBs.get(), kRate.get(), kBrake.get(), kRelease.get(), kLoop.get(), kBpm.get(), kOut.get() })
+    for (auto* k : { kTime.get(), kLevel.get(), kColor.get(), kParam.get(), kBs.get(), kRate.get(), kBrake.get(), kRelease.get(), kInertia.get(), kLoop.get(), kBpm.get(), kOut.get() })
         k->repaint();
     fxSel->repaint();
     hBack->setToggleState (raw (ids::jogBackspin) > 0.5f, dontSendNotification);
@@ -909,7 +914,7 @@ void NamiDJFXEditor::timerCallback()
     hLive->setToggleState (raw (ids::jogResync) > 0.5f, dontSendNotification);
     bRec->setToggleState (proc.recording.load(), dontSendNotification);
     quantBeats->setAlpha (raw (ids::quantize) > 0.5f ? 1.f : 0.5f);
-    repaint (boxC.withTrimmedTop (400));      // 遅れ表示
+    repaint (boxC.withTrimmedTop (250));      // 遅れ表示
 }
 
 void WaveStrip::paint (Graphics& g)
@@ -1012,17 +1017,15 @@ void NamiDJFXEditor::paint (Graphics& g)
     g.setColour (ui::text.withAlpha (0.85f));
     g.drawText ("BEAT", boxA.getX() + 8, boxA.getY() + 153, boxA.getWidth() - 16, 14, Justification::centred, false);
     g.setColour (ui::dim); g.setFont (lnf.font (0.85f));
-    g.drawText ("LOOKAHEAD ms", boxC.getX() + 8, boxC.getY() + 497, 160, 14, Justification::left, false);
+    g.drawText ("LOOKAHEAD ms", boxC.getX() + 8, boxC.getY() + 515, 160, 14, Justification::left, false);
     {   // SLIP OFFでライブより遅れている長さ(DAWの拍に直して表示)
         const float lagMs = proc.jogLagMs.load();
         const double beatMs = 60000.0 / std::max (30.f, proc.lastBpm.load());
-        const int lx = boxC.getX() + 258, ly = boxC.getY() + 442;
-        g.setColour (ui::dim); g.setFont (lnf.font (0.75f));
-        g.drawText ("LAG", lx, ly, 78, 12, Justification::centred, false);
-        g.setFont (lnf.font (0.95f)); g.setColour (lagMs < 1.f ? ui::dim : ui::amber);
-        g.drawText (lagMs < 1.f ? String ("LIVE") : String ((int) lagMs) + " ms", lx, ly + 12, 78, 15, Justification::centred, false);
+        const int lx = boxC.getX() + 258, ly = boxC.getY() + 304;
+        g.setFont (lnf.font (0.85f)); g.setColour (lagMs < 1.f ? ui::dim : ui::amber);
+        g.drawText (lagMs < 1.f ? String ("LAG LIVE") : "LAG " + String ((int) lagMs) + "ms", lx, ly, 78, 14, Justification::centred, false);
         g.setFont (lnf.font (0.75f)); g.setColour (ui::dim);
-        g.drawText (lagMs < 1.f ? String() : String (lagMs / beatMs, 2) + " beat", lx, ly + 28, 78, 12, Justification::centred, false);
+        g.drawText (lagMs < 1.f ? String() : String (lagMs / beatMs, 2) + " beat", lx, ly + 14, 78, 12, Justification::centred, false);
     }
     for (int dx : { 0 }) { g.setColour (ui::line); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getX() + 8.f, (float) boxA.getCentreX() - 28.f); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getCentreX() + 28.f, (float) boxA.getRight() - 8.f); }
 
@@ -1040,7 +1043,7 @@ void NamiDJFXEditor::resized()
 {
     boxA = { 8, 46, 412, 546 };
     boxB = { 430, 46, 208, 546 };
-    boxC = { 650, 46, 342, 546 };
+    boxC = { 650, 46, 342, 556 };
     auto at = [] (Rectangle<int> b, int x, int y, int w, int h) { return Rectangle<int> (b.getX() + x, b.getY() + y, w, h); };
 
     // BEAT FX(実機の並び: 液晶 → BEAT ◀▶ → TAP → FX FREQUENCY → 選択ロータリー → X-PAD → TIME / ON-OFF / LEVEL)
@@ -1080,13 +1083,16 @@ void NamiDJFXEditor::resized()
     tSlip->setBounds (at (boxC, 6, 280, 80, 22));
     tQuant->setBounds (at (boxC, 90, 280, 80, 22));
     quantBeats->setBounds (at (boxC, 174, 280, 162, 22));
-    kBs->setBounds (at (boxC, 6, 308, 80, 98));
-    kRate->setBounds (at (boxC, 90, 308, 80, 98));
-    kBrake->setBounds (at (boxC, 174, 308, 80, 98));
-    kRelease->setBounds (at (boxC, 258, 308, 80, 98));
-    kLoop->setBounds (at (boxC, 6, 410, 80, 84));
-    kBpm->setBounds (at (boxC, 90, 410, 80, 84));
-    kOut->setBounds (at (boxC, 174, 410, 80, 84));
-    hLive->setBounds (at (boxC, 262, 414, 70, 24));
-    latency->setBounds (at (boxC, 6, 512, 330, 26));
+    tStopQ->setBounds (at (boxC, 6, 306, 80, 22));
+    tKeyLock->setBounds (at (boxC, 90, 306, 80, 22));
+    hLive->setBounds (at (boxC, 174, 306, 80, 22));
+    kBs->setBounds (at (boxC, 6, 334, 80, 96));
+    kRate->setBounds (at (boxC, 90, 334, 80, 96));
+    kBrake->setBounds (at (boxC, 174, 334, 80, 96));
+    kRelease->setBounds (at (boxC, 258, 334, 80, 96));
+    kLoop->setBounds (at (boxC, 6, 432, 80, 80));
+    kBpm->setBounds (at (boxC, 90, 432, 80, 80));
+    kOut->setBounds (at (boxC, 174, 432, 80, 80));
+    kInertia->setBounds (at (boxC, 258, 432, 80, 80));
+    latency->setBounds (at (boxC, 6, 530, 330, 24));
 }

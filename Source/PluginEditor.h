@@ -219,7 +219,7 @@ private:
     std::unique_ptr<JogWheel> jog;
     std::unique_ptr<WaveStrip> waveIn, waveOut;
     std::unique_ptr<FxDisplay> lcd;
-    std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kRelease, kLoop, kBpm, kOut;
+    std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kRelease, kLoop, kBpm, kOut, kInertia;
     juce::OwnedArray<juce::TextButton> toggles;
     juce::OwnedArray<HoldButton> holds;
     juce::OwnedArray<juce::ButtonParameterAttachment> btnAtts;
@@ -227,6 +227,6 @@ private:
     juce::TextButton *bPrev = nullptr, *bNext = nullptr, *bTap = nullptr;
     std::vector<double> tapTimes;
     HoldButton *hBack = nullptr, *hBrake = nullptr, *hRev = nullptr, *hLoop = nullptr, *hLive = nullptr;
-    juce::TextButton *tSlip = nullptr, *tQuant = nullptr, *bReloop = nullptr, *bHalf = nullptr, *bDouble = nullptr, *bRec = nullptr;
+    juce::TextButton *tSlip = nullptr, *tQuant = nullptr, *bReloop = nullptr, *bHalf = nullptr, *bDouble = nullptr, *bRec = nullptr, *tKeyLock = nullptr, *tStopQ = nullptr;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NamiDJFXEditor)
 };

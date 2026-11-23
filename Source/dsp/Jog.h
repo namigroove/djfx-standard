@@ -16,6 +16,8 @@ struct JogParams
     bool slip = true;             // ON: 離すと裏で進んでいたライブ位置へ戻る / OFF: 離した位置から続ける(ライブより遅れる)
     bool loopRecall = false;      // ループに入るとき、直前のループの始点から入り直す(RELOOP)
     bool resync = false;          // 遅れたまま続けている再生を、ライブ位置へ戻す
+    float inertiaMs = 0.f;        // >0: スクラッチを離したとき、離した速度から等速へこの時間かけて滑らかに戻る(盤の慣性)。0=なし
+    bool pitchLock = false;       // ON: 速度を変えても音程を変えない(グレイン方式)。OFF: テープ式(速度=音程)
     float snapBeats = 0.f;        // >0: SLIP OFFで続けるとき、遅れを拍(この拍数)の整数倍に揃える(QUANTIZE)
 };
 
@@ -39,7 +41,7 @@ public:
     {
         for (auto& h : hist) std::fill (h.begin(), h.end(), 0.f);
         wp = 0; state = Idle; g = 0.f; gT = 0.f; v = 1.f; rd = 0.0; xf = 1.f;
-        validFrom = 0; haveLoop = false; lag = 0.0;
+        validFrom = 0; haveLoop = false; lag = 0.0; grainOn = false; coast = false;
     }
     bool engaged() const { return state != Idle; }
     double lagSamples() const { return lag; }
@@ -81,7 +83,9 @@ public:
                 case Release: if (p.resync) relSlipFade = true; gT = 1.f; break;
                 case Follow:  gT = (p.slip || p.resync || followFade) ? 0.f : 1.f; break;
                 default:      // 操作を離した
-                    if (! p.slip || state == Brake) { state = Release; t = 0.f; vEnter = v; relSlipFade = p.slip || p.resync; followFade = false; gT = 1.f; }
+                    if (state == Scratch && p.inertiaMs > 1.f)          // 慣性: 離した速度から滑らかに等速へ
+                    { state = Release; t = 0.f; vEnter = v; coast = true; relSlipFade = p.slip || p.resync; followFade = false; gT = 1.f; }
+                    else if (! p.slip || state == Brake) { state = Release; t = 0.f; vEnter = v; coast = false; relSlipFade = p.slip || p.resync; followFade = false; gT = 1.f; }
                     else gT = 0.f;
                     break;
             }
@@ -94,6 +98,7 @@ public:
         const float bsT = std::max (1.f, p.backspinTimeMs * 0.001f * sr);
         const float brT = std::max (1.f, p.brakeTimeMs * 0.001f * sr);
         const float reT = std::max (1.f, p.releaseTimeMs * 0.001f * sr);
+        const float coT = std::max (1.f, p.inertiaMs * 0.001f * sr);
 
         for (int i = 0; i < n; ++i)
         {
@@ -117,13 +122,14 @@ public:
                 case Loop:     v = 1.f; break;
                 case Release:
                 {
-                    const float tt = t / reT;
+                    const float tt = t / (coast ? coT : reT);
                     if (tt >= 1.f)
                     {
                         v = 1.f;
                         if (relSlipFade) gT = 0.f;                 // SLIP ON: 加速し終えたらライブへ戻る
                         else { state = Follow; snapLag (newest, p); }
                     }
+                    else if (coast) { v = 1.f + (vEnter - 1.f) * std::exp (-3.f * tt); t += 1.f; }                // 慣性: 指数で等速へ
                     else { const float k = 1.f - tt; v = 1.f - (1.f - vEnter) * k * std::sqrt (k); t += 1.f; }   // BRAKEの逆カーブ
                     break;
                 }
@@ -144,13 +150,25 @@ public:
 
             g += (gT - g) * (gT > g ? ca : cr);
             const float va = atEdge ? 0.f : clampf (std::fabs (v) * 10.f, 0.f, 1.f);   // 止まった盤は無音(DCを出さない)
-            float jl = readAt (0, rd), jr = readAt (1, rd);
-            if (xf < 1.f)
+            float jl, jr;
+            const bool grainMode = p.pitchLock && (state == BackSpin || state == Brake || state == Reverse || state == Scratch || state == Release);
+            if (grainMode)
+            {
+                if (! grainOn) initGrains (rd, lo);
+                stepGrains (rd, lo, hi, v, jl, jr);
+            }
+            else
+            {
+                grainOn = false;
+                jl = readAt (0, rd); jr = readAt (1, rd);
+            }
+            if (xf < 1.f && ! grainMode)
             {
                 jl = jl * xf + readAt (0, rdPrev) * (1.f - xf);
                 jr = jr * xf + readAt (1, rdPrev) * (1.f - xf);
                 xf = std::min (1.f, xf + xfStep);
             }
+            else if (xf < 1.f) xf = 1.f;
             jl *= va; jr *= va;
             L[i] = L[i] * (1.f - g) + jl * g;
             R[i] = R[i] * (1.f - g) + jr * g;
@@ -228,6 +246,43 @@ private:
         lastLoopStart = loopStart; haveLoop = true;
     }
 
+    // ---- ピッチ維持(グレイン): 50ms・オーバーラップ4のハン窓。各グレインは等速で順再生し、開始位置だけが再生ヘッド(rd)に追従する
+    void initGrains (double rdNow, double lo)
+    {
+        G = std::max (16, ((int) (0.05f * sr)) & ~3); H = G / 4;
+        for (int k = 0; k < 4; ++k)
+        {
+            gAge[k] = (k + 1) * H;                       // 0..2は途中、3は次の発射で使う
+            gStart[k] = std::max (lo, rdNow - (double) gAge[k]);
+        }
+        gAge[3] = G; gNext = 3; gHop = 0; grainOn = true;
+    }
+    void stepGrains (double rdNow, double lo, double hi, float speed, float& oL, float& oR)
+    {
+        if (gHop == 0)
+        {
+            double st = rdNow;
+            if (std::fabs (speed) < 0.15f)                                   // ほぼ停止: 開始位置を少し揺らして同じ粒の連打を避ける
+            {
+                rng = rng * 1664525u + 1013904223u;
+                st += ((double) (rng >> 8) / 16777216.0 - 0.5) * 0.016 * (double) sr;
+            }
+            gStart[gNext] = std::min (hi, std::max (lo, st)); gAge[gNext] = 0;
+            gNext = (gNext + 1) & 3;
+        }
+        if (++gHop >= H) gHop = 0;
+        float sl = 0.f, sr_ = 0.f;
+        for (int k = 0; k < 4; ++k)
+        {
+            if (gAge[k] >= G) continue;
+            const float w = 0.5f - 0.5f * std::cos (6.2831853f * (float) gAge[k] / (float) G);
+            const double pos = std::min (hi, gStart[k] + (double) gAge[k]);
+            sl += w * readAt (0, pos); sr_ += w * readAt (1, pos);
+            ++gAge[k];
+        }
+        oL = sl * 0.5f; oR = sr_ * 0.5f;
+    }
+
     float readAt (int ch, double pos) const
     {
         const int64_t i = (int64_t) std::floor (pos);
@@ -245,7 +300,10 @@ private:
     int N = 1 << 19, mask = (1 << 19) - 1;
     int64_t wp = 0, validFrom = 0;
     double rd = 0.0, rdPrev = 0.0, loopLen = 0.0, loopStart = 0.0, loopEnd = 0.0, lastLoopStart = 0.0, lag = 0.0;
-    bool relSlipFade = true, haveLoop = false, followFade = false;
+    bool relSlipFade = true, haveLoop = false, followFade = false, coast = false, grainOn = false;
+    int G = 2400, H = 600, gAge[4] = { 0, 0, 0, 0 }, gNext = 0, gHop = 0;
+    double gStart[4] = { 0, 0, 0, 0 };
+    uint32_t rng = 12345u;
     State state = Idle;
     std::vector<float> hist[2];
 };

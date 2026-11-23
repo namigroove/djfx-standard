@@ -516,6 +516,7 @@ int main()
                 p.jogBackspin = rnd() > 0.85f; p.jogBrake = rnd() > 0.85f; p.jogReverse = rnd() > 0.85f; p.jogScratch = rnd() > 0.85f; p.jogLoop = rnd() > 0.85f;
                 p.jogSpeed = rnd() * 8 - 4; p.loopBeat = rnd(); p.backspinTimeMs = 200 + rnd() * 3800; p.brakeTimeMs = 50 + rnd() * 4950; p.backspinRate = 1 + rnd() * 9;
                 p.slip = rnd() > 0.4f; p.releaseTimeMs = 50 + rnd() * 4950; p.releaseBeats = rnd() > 0.6f ? 0.25f * (float) (1 + std::rand() % 16) : 0.f;
+                p.inertiaMs = rnd() > 0.5f ? rnd() * 3000.f : 0.f; p.pitchLock = rnd() > 0.5f; p.stopQuant = rnd() > 0.5f;
                 p.loopLatch = rnd() > 0.8f; p.jogResync = rnd() > 0.9f; p.quantize = rnd() > 0.5f; p.quantBeats = 0.125f * (float) (1 << (std::rand() % 4));
                 h.bpm = rnd() > 0.2f ? 60 + rnd() * 140 : 0;
             }
@@ -525,6 +526,82 @@ int main()
         }
         std::printf("  non-finite=%d peak=%.2f\n", bad, peak);
         CHECK (bad == 0, "NaN/Inf"); CHECK (peak < 30.f, "runaway peak %.1f", peak);
+    }
+
+    std::printf("[20] 慣性: スクラッチを離すと、離した速度から指定の時間で等速へ戻る(INERTIAで長さを調整)\n");
+    {
+        auto trial = [&] (float inertia, double& f50, double& f600, double& fEnd)
+        {
+            std::vector<float> L ((size_t) (SR * 5)), R;
+            for (int i = 0; i < (int) L.size(); ++i) L[(size_t) i] = 0.5f * (float) std::sin (2 * kPi * 440.0 * i / SR);
+            R = L; Engine e; e.prepare (SR);
+            Params off; off.slip = false; off.releaseTimeMs = 50; off.inertiaMs = inertia;
+            Params sc = off; sc.jogScratch = true; sc.jogSpeed = -3.f;       // 後ろへ勢いよく回して離す
+            std::vector<std::pair<int, Params>> ch = { { 0, off }, { (int) (SR * 2), sc }, { (int) (SR * 2.2), off } };
+            run (e, L, R, off, host, 256, &ch);
+            const int r0 = (int) (SR * 2.2);
+            f50 = zeroCrossRate (L, r0 + (int) (SR * 0.02), r0 + (int) (SR * 0.07));
+            f600 = zeroCrossRate (L, r0 + (int) (SR * 0.95), r0 + (int) (SR * 1.05));
+            fEnd = zeroCrossRate (L, r0 + (int) (SR * 1.7), r0 + (int) (SR * 1.8));
+        };
+        double a1, a2, a3, b1, b2, b3;
+        trial (0.f, a1, a2, a3); trial (1200.f, b1, b2, b3);
+        std::printf("  慣性なし: 離した直後 %.0fHz / 1.0s後 %.0fHz / 1.7s後 %.0fHz\n", a1, a2, a3);
+        std::printf("  慣性1200ms: 離した直後 %.0fHz / 1.0s後 %.0fHz / 1.7s後 %.0fHz\n", b1, b2, b3);
+        CHECK (b1 > 900 && b2 > 200 && b2 < 380 && std::fabs (b3 - 440) < 40, "inertia curve");
+        CHECK (a1 < 600, "no-inertia should already be near normal speed");
+        CHECK (b2 < a2 - 60, "inertia not slower to settle");
+    }
+
+    std::printf("[21] KEY LOCK: 速度を変えても音程が変わらない / テープ式は変わる\n");
+    {
+        auto freqAt = [&] (bool lock, float speed)
+        {
+            std::vector<float> L ((size_t) (SR * 3)), R;
+            for (int i = 0; i < (int) L.size(); ++i) L[(size_t) i] = 0.5f * (float) std::sin (2 * kPi * 440.0 * i / SR);
+            R = L; Engine e; e.prepare (SR);
+            Params off; off.jogLatencyMs = 500.f; off.pitchLock = lock; Params sc = off; sc.jogScratch = true; sc.jogSpeed = speed;
+            std::vector<std::pair<int, Params>> ch = { { 0, off }, { (int) (SR * 1), sc } };
+            run (e, L, R, off, host, 256, &ch);
+            Stat s = stat (L, 0, (int) L.size()); CHECK (! s.bad && s.peak < 0.8f, "keylock peak %.2f", s.peak);
+            return std::make_pair (zeroCrossRate (L, (int) (SR * 1.08), (int) (SR * 1.4)), stat (L, (int) (SR * 1.08), (int) (SR * 1.4)).rms);
+        };
+        auto t2 = freqAt (false, 2.f); auto k2 = freqAt (true, 2.f); auto k05 = freqAt (true, 0.5f); auto kr = freqAt (true, -1.f); // 逆再生
+        std::printf("  速度x2: テープ %.0fHz / KEY LOCK %.0fHz   x0.5 KEY LOCK %.0fHz   逆再生 KEY LOCK %.0fHz (rms %.2f)\n", t2.first, k2.first, k05.first, kr.first, kr.second);
+        CHECK (std::fabs (t2.first - 880) < 40, "tape x2"); CHECK (std::fabs (k2.first - 440) < 60, "keylock x2 pitch");
+        CHECK (std::fabs (k05.first - 440) < 60, "keylock x0.5 pitch"); CHECK (std::fabs (kr.first - 440) < 60 && kr.second > 0.2, "keylock reverse");
+    }
+
+    std::printf("[22] STOP Q: BRAKE/BACKSPINが止まる瞬間が拍の目盛りに乗る\n");
+    {
+        auto stopAt = [&] (bool stopQ, double startPpq, bool brake)
+        {
+            const int total = (int) (SR * 6); std::vector<float> L ((size_t) total), R;
+            for (int i = 0; i < total; ++i) L[(size_t) i] = 0.5f * (float) std::sin (2 * kPi * 440.0 * i / SR);
+            R = L; Engine e; e.prepare (SR);
+            Params off; off.slip = false; off.stopQuant = stopQ; off.quantBeats = 1.f; off.brakeTimeMs = 700; off.backspinTimeMs = 700; off.backspinRate = 2.f;
+            Params on = off; if (brake) on.jogBrake = true; else on.jogBackspin = true;
+            const int startS = (int) ((startPpq - 0.0) * 0.5 * SR);       // 120BPM: 1拍=0.5s
+            int n = total, ci = 0; (void) ci;
+            for (int off0 = 0; off0 < n; off0 += 128)
+            {
+                HostInfo h = host; h.ppq = off0 * 2.0 / SR;
+                e.process (L.data() + off0, R.data() + off0, 128, off0 >= startS ? on : off, h, 0);
+            }
+            // 無音になった最初のサンプル(0.02秒窓のrmsで判定)
+            for (int i = startS; i + 480 < total; i += 48) if (stat (L, i, i + 480).rms < 0.004) return (i - startS) / SR;
+            return -1.0;
+        };
+        for (bool brake : { true, false })
+        {
+            const double startPpq = 1.3, base = 0.7;
+            const double len0 = stopAt (false, startPpq, brake), len1 = stopAt (true, startPpq, brake);
+            const double endBeat = startPpq + len1 * 2.0;                  // 止まった位置(拍)
+            std::printf("  %s: 押したのは1.3拍目 / STOP Qなし 停止まで%.2fs / あり %.2fs → 止まる位置 %.2f拍\n", brake ? "BRAKE" : "BACKSPIN", len0, len1, endBeat);
+            CHECK (len0 > 0 && len1 > 0, "never stopped");
+            CHECK (std::fabs (endBeat - std::round (endBeat)) < 0.08, "stop not on beat (%.3f)", endBeat);
+            CHECK (len1 >= len0 - 0.03 && len1 < base + 0.55, "stop q length odd");
+        }
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASSED", failures, failures == 1 ? "" : "s");
