@@ -155,42 +155,72 @@ void NamiLnF::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     g.drawText (b.getButtonText(), area, Justification::centred, false);
 }
 
-// つまみのキャップ。ring: 黒い胴に白いリング(EQ/TRIMなど)、knurl: 滑り止めの溝付き(COLOR・エフェクト選択)
+// つまみのキャップ(立体風)。ring: 黒い胴に銀のリング(EQ/TRIMなど)、knurl: 銀の削り出し+溝付き(COLOR)。
+// 光は左上から。影・グラデーション・ハイライトで丸みを出す。
+static void softShadow (Graphics& g, Point<float> c, float r)
+{
+    for (int i = 4; i >= 1; --i)
+    {
+        const float k = (float) i;
+        g.setColour (Colours::black.withAlpha (0.16f));
+        g.fillEllipse (c.x - r - k + 1.5f, c.y - r - k + 2.8f, (r + k) * 2, (r + k) * 2);
+    }
+}
 static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool knurl, bool dimmed)
 {
-    g.setColour (ui::well);                                  // 取り付け穴の影
-    g.fillEllipse (c.x - rBody - 2.f, c.y - rBody - 2.f, (rBody + 2.f) * 2, (rBody + 2.f) * 2);
+    softShadow (g, c, rBody);
+    const float ca = std::sin (angle), sa = -std::cos (angle);       // ポインタの向き
+    auto pointer = [&] (float r0, float r1, Colour col, float w)
+    {
+        g.setColour (Colours::black.withAlpha (0.35f));
+        g.drawLine (c.x + ca * r0 + 1.f, c.y + sa * r0 + 1.6f, c.x + ca * r1 + 1.f, c.y + sa * r1 + 1.6f, w);
+        g.setColour (col);
+        g.drawLine (c.x + ca * r0, c.y + sa * r0, c.x + ca * r1, c.y + sa * r1, w);
+    };
+
     if (knurl)
     {
-        // 銀の胴 + 細かい溝(ローレット) + 平らな銀の天面
-        g.setColour (Colour (0xffb8b8bc));                                   // 銀の胴 + 細かい溝(ローレット) + 平らな銀の天面
-        g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
-        for (int i = 0; i < 90; ++i)
+        // 銀: 外周の溝つき胴 → 放射状のヘアラインの天面
+        ColourGradient body (Colour (0xfff0f0f3), c.x - rBody * 0.7f, c.y - rBody * 0.8f, Colour (0xff6c6c72), c.x + rBody * 0.8f, c.y + rBody * 0.9f, false);
+        g.setGradientFill (body); g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
+        for (int i = 0; i < 72; ++i)
         {
-            const float a = MathConstants<float>::twoPi * (float) i / 90.f;
-            g.setColour (Colour (0xff6d6d72));
+            const float a = MathConstants<float>::twoPi * (float) i / 72.f;
+            const float lit = 0.5f + 0.5f * std::cos (a + 2.35f);        // 左上ほど明るい
+            g.setColour (Colour::fromFloatRGBA (0.f, 0.f, 0.f, 0.22f + 0.28f * (1.f - lit)));
             g.drawLine (c.x + std::sin (a) * (rBody - 5.f), c.y - std::cos (a) * (rBody - 5.f),
-                        c.x + std::sin (a) * (rBody - 0.5f), c.y - std::cos (a) * (rBody - 0.5f), 1.2f);
+                        c.x + std::sin (a) * (rBody - 0.4f), c.y - std::cos (a) * (rBody - 0.4f), 1.5f);
         }
+        g.setColour (Colour (0xff4a4a4f)); g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.f);
         const float rt = rBody - 6.f;
-        g.setColour (Colour (0xffd0d0d3)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
-        g.setColour (Colour (0xff77777c)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
-        g.setColour (Colour (0xff161617));                                   // 銀の面に黒いポインタ
-        g.drawLine (c.x + std::sin (angle) * (rBody * 0.30f), c.y - std::cos (angle) * (rBody * 0.30f),
-                    c.x + std::sin (angle) * (rt - 3.f), c.y - std::cos (angle) * (rt - 3.f), 3.f);
+        g.setColour (Colour (0xff2c2c30)); g.fillEllipse (c.x - rt - 1.f, c.y - rt - 1.f, rt * 2 + 2.f, rt * 2 + 2.f);   // 胴と天面の段差
+        for (int i = 0; i < 180; ++i)                                     // 削り出しの放射状の艶(2か所の反射)
+        {
+            const float a = MathConstants<float>::twoPi * (float) i / 180.f;
+            const float v = 0.60f + 0.32f * std::pow (std::fabs (std::cos (a - 0.75f)), 3.f) + 0.015f * std::sin ((float) i * 7.f);
+            g.setColour (Colour::fromFloatRGBA (v, v, v * 1.02f, 1.f));
+            Path w; w.startNewSubPath (c.x, c.y);
+            w.lineTo (c.x + std::sin (a) * rt, c.y - std::cos (a) * rt);
+            g.strokePath (w, PathStrokeType (2.2f));
+        }
+        g.setColour (Colour (0xff5a5a60)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
+        pointer (rBody * 0.18f, rt - 1.f, Colour (0xff111112), 3.2f);
         return;
     }
-    {
-        g.setColour (ui::ink);                               // 黒い胴
-        g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
-        g.setColour (dimmed ? ui::dim : Colour (0xffcfcfd3));   // 銀のリング
-        g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.8f);
-        g.setColour (Colour (0xff2a2a2d));
-        g.drawEllipse (c.x - rBody + 4.f, c.y - rBody + 4.f, (rBody - 4.f) * 2, (rBody - 4.f) * 2, 1.f);
-    }
-    g.setColour (dimmed ? ui::dim : ui::text);               // 白い太いポインタ
-    g.drawLine (c.x + std::sin (angle) * (rBody * 0.12f), c.y - std::cos (angle) * (rBody * 0.12f),
-                c.x + std::sin (angle) * (rBody - 3.f), c.y - std::cos (angle) * (rBody - 3.f), 3.f);
+
+    // 黒い胴 + 銀のリング
+    const float ringW = 2.6f;
+    ColourGradient ring (Colour (0xfffafafb), c.x - rBody, c.y - rBody, Colour (0xff808086), c.x + rBody, c.y + rBody, false);
+    g.setGradientFill (ring); g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
+    if (dimmed) { g.setColour (Colour (0xaa000000)); g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2); }
+    const float rb = rBody - ringW;
+    ColourGradient body (Colour (0xff3e3e42), c.x - rb * 0.55f, c.y - rb * 0.7f, Colour (0xff0d0d0e), c.x + rb * 0.9f, c.y + rb * 1.0f, true);
+    g.setGradientFill (body); g.fillEllipse (c.x - rb, c.y - rb, rb * 2, rb * 2);
+    const float rt = rb * 0.68f;                                       // 天面のくぼみ
+    ColourGradient top (Colour (0xff202023), c.x - rt * 0.4f, c.y - rt * 0.6f, Colour (0xff3a3a3e), c.x + rt * 0.7f, c.y + rt * 0.9f, false);
+    g.setGradientFill (top); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
+    g.setColour (Colour (0x22ffffff)); g.drawEllipse (c.x - rb + 0.5f, c.y - rb + 0.5f, rb * 2 - 1.f, rb * 2 - 1.f, 1.f);   // 縁の反射
+    pointer (rb * 0.14f, rBody - 3.f, dimmed ? ui::dim : ui::text, 3.f);
 }
 
 void NamiLnF::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float pos, float a0, float a1, Slider& s)
