@@ -199,12 +199,22 @@ public:
     ~NamiDJFXEditor() override;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseMove (const juce::MouseEvent& e) override { updateHint (e); }
+    void mouseEnter (const juce::MouseEvent& e) override { updateHint (e); }
+    void mouseDown (const juce::MouseEvent& e) override { updateHint (e); }
+    void mouseExit (const juce::MouseEvent&) override { setHint ({}); }
+    void previewHint (int i) { if (i >= 0 && i < (int) hints.size()) setHint (hints[(size_t) i].second); }   // 画面確認用
     juce::Image renderSnapshot() { return createComponentSnapshot (getLocalBounds()); }
 
 private:
     void timerCallback() override;
     void sectionHeader (juce::Graphics&, juce::Rectangle<int>, const juce::String&);
     void buildFace (int w, int h);
+    void addHint (juce::Component* c, const juce::String& title, const juce::String& text) { hints.push_back ({ c, { title, text } }); }
+    void updateHint (const juce::MouseEvent&);
+    void setHint (const std::pair<juce::String, juce::String>& h) { if (h != hint) { hint = h; repaint (0, getHeight() - 36, getWidth(), 36); } }
+    std::vector<std::pair<juce::Component*, std::pair<juce::String, juce::String>>> hints;
+    std::pair<juce::String, juce::String> hint;
     juce::TextButton* addAction (const juce::String& label, std::function<void()> onClick);
     juce::TextButton* addToggle (const juce::ParameterID&, const juce::String& label, juce::Colour accent = ui::teal);
     HoldButton* addHold (const juce::ParameterID&, const juce::String& label);

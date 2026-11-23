@@ -33,6 +33,7 @@ int main (int argc, char** argv)
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     auto* e = dynamic_cast<NamiDJFXEditor*> (ed.get());
     juce::MessageManager::getInstance()->runDispatchLoopUntil (300);
+    e->previewHint (argc > 2 ? std::atoi (argv[2]) : -1);
     auto img = e->renderSnapshot();
     juce::File out (argc > 1 ? argv[1] : "snapshot.png");
     out.deleteFile();

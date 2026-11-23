@@ -4,6 +4,9 @@
 #endif
 using namespace juce;
 
+// 日本語の文字列リテラルはUTF-8として読む(JUCEのString(const char*)はASCII扱いで文字化けする)
+static String J (const char* utf8) { return String::fromUTF8 (utf8); }
+
 static float textWidth (const Font& f, const String& s)
 {
     GlyphArrangement ga;
@@ -907,7 +910,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
         {
             const double bpm = bpmNow();
             PopupMenu m;
-            m.addSectionHeader ("BPM " + String (bpm, 1) + " で合わせる");
+            m.addSectionHeader ("BPM " + String (bpm, 1) + J (" で合わせる"));
             for (int i = 1; i < kNumNotes; ++i)
                 m.addItem (i, String (kNoteNames[i]).paddedRight (' ', 6) + "= " + String ((int) std::lround (noteMs (i, bpm))) + " ms", true, noteIdx (beatId) == i);
             m.addSeparator();
@@ -979,9 +982,63 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     quantBeats = std::make_unique<ChoiceGroup> (proc.apvts, ids::quantBeat, StringArray { "1/8", "1/4", "1/2", "1" }, 4, 3);
     addAndMakeVisible (*quantBeats);
 
+    // ---- 下の帯に出す簡易説明(触っている部品のもの)
+    addHint (lcd.get(), J ("BEAT FX 表示"), J ("エフェクト名・BPM・拍の長さ。拍の位置をクリックして選ぶ。BPMはDAWに連動"));
+    addHint (fxSel.get(), J ("エフェクト選択"), J ("つまみを回して14種類から選ぶ。名前をクリックでも選べる"));
+    addHint (bPrev, J ("BEAT ◀"), J ("拍の長さを1つ短く(前へ)"));
+    addHint (bNext, J ("BEAT ▶"), J ("拍の長さを1つ長く(次へ)"));
+    addHint (bTap, J ("TAP"), J ("タップしてBPMを入力。DAWのBPMがないときに使う"));
+    addHint (bSync, J ("BPM SYNC"), J ("ONで拍に同期。OFFだとTIMEのmsで動く"));
+    addHint (bLow, J ("FX FREQUENCY  LOW"), J ("エフェクトをかける帯域(低域)。複数選べる"));
+    addHint (bMid, J ("FX FREQUENCY  MID"), J ("エフェクトをかける帯域(中域)。複数選べる"));
+    addHint (bHi, J ("FX FREQUENCY  HI"), J ("エフェクトをかける帯域(高域)。複数選べる"));
+    addHint (bOn, J ("ON/OFF"), J ("BEAT FX のON/OFF。MIDI F1 を押している間だけかけることもできる"));
+    addHint (xpad.get(), J ("X-PAD"), J ("触っている間だけエフェクトがかかる。左右の位置で長さが変わる"));
+    addHint (kTime.get(), J ("TIME"), J ("エフェクトの時間(ms)。右クリックで拍に合わせる。数字も打てる"));
+    addHint (kLevel.get(), J ("LEVEL / DEPTH"), J ("エフェクトの効き具合。MINで原音、MAXで最大"));
+    addHint (colorTypes.get(), J ("SOUND COLOR FX"), J ("種類を選ぶ。点灯中をもう一度押すとOFF"));
+    addHint (kColor.get(), J ("COLOR"), J ("左へ回すとLOW側、右へ回すとHI側の効き。中央は効かない"));
+    addHint (kParam.get(), J ("PARAMETER"), J ("選んだ SOUND COLOR FX のパラメータ"));
+    addHint (bLock, J ("CENTER LOCK"), J ("ONでCOLORが中央で止まりやすくなる"));
+    addHint (jog.get(), J ("JOG"), J ("ドラッグでスクラッチ。回した速さで再生速度が変わる。離すと戻る"));
+    addHint (hBack, J ("BACKSPIN"), J ("押している間、逆回転して減速。離すと戻る。長さは SPIN TIME"));
+    addHint (hBrake, J ("BRAKE"), J ("押している間、減速して止まる(テープストップ)。長さは BRAKE TIME"));
+    addHint (hRev, J ("REVERSE"), J ("押している間、逆再生。離すと戻る"));
+    addHint (hLoop, J ("LOOP"), J ("押している間、LOOP BEAT の長さでビートループ"));
+    addHint (bHalf, J ("1/2X"), J ("ループの長さを半分にする"));
+    addHint (bDouble, J ("2X"), J ("ループの長さを2倍にする"));
+    addHint (bReloop, J ("RELOOP / EXIT"), J ("直前のループへ入り直す。ループ中はもう一度押すと抜ける"));
+    addHint (tSlip, J ("SLIP"), J ("ON: 離すと裏で進んでいた位置へ戻る。OFF: 離した位置から続ける(ライブより遅れる)"));
+    addHint (tQuant, J ("QUANTIZE"), J ("操作の開始をDAWの拍に合わせる。右の目盛りで細かさを選ぶ"));
+    addHint (quantBeats.get(), J ("QUANTIZE の目盛り"), J ("拍に合わせる細かさ(1/8〜1拍)"));
+    addHint (tStopQ, J ("STOP Q"), J ("BACKSPIN/BRAKEが止まる位置を、拍の目盛りに合わせる"));
+    addHint (tKeyLock, J ("KEY LOCK"), J ("ONで速度を変えても音程が変わらない。OFFはテープ式"));
+    addHint (hLive, J ("RESYNC"), J ("押している間、遅れて続けている再生をライブ位置へ戻す"));
+    addHint (kBs.get(), J ("SPIN TIME"), J ("バックスピンが止まるまでの長さ。右クリックで音符に合わせる"));
+    addHint (kRate.get(), J ("SPIN RATE"), J ("バックスピンの逆回転の最初の速さ"));
+    addHint (kBrake.get(), J ("BRAKE TIME"), J ("ブレーキで止まるまでの長さ。右クリックで音符に合わせる"));
+    addHint (kRelease.get(), J ("RELEASE"), J ("止めたあと、離して等速に戻るまでの長さ"));
+    addHint (kInertia.get(), J ("INERTIA"), J ("スクラッチを離したあと、勢いが残る長さ。OFFで残さない"));
+    addHint (kLoop.get(), J ("LOOP BEAT"), J ("ループの長さ(拍)"));
+    addHint (kBpm.get(), J ("BPM"), J ("DAWのBPMがわからないときに使うBPM"));
+    addHint (kOut.get(), J ("OUT"), J ("全体の出力レベル"));
+    addHint (latency.get(), J ("LOOKAHEAD"), J ("先読み。大きいほど前方向のスクラッチが使えるが、音が遅れる(DAWが補正)"));
+    addHint (bRec, J ("REC"), J ("押している間の操作を、DAWのオートメーションに記録する(MIDI G1でも可)"));
+    addHint (waveIn.get(), J ("IN 波形"), J ("入力の波形。上が今、下が約6秒前。黄色い線は再生ヘッド"));
+    addHint (waveOut.get(), J ("OUT 波形"), J ("エフェクト後の波形"));
+    addMouseListener (this, true);
+
     setSize (1000, 640);
     startTimerHz (30);
 }
+void NamiDJFXEditor::updateHint (const MouseEvent& e)
+{
+    for (auto* c = e.originalComponent; c != nullptr && c != this; c = c->getParentComponent())
+        for (auto& h : hints)
+            if (h.first == c) { setHint (h.second); return; }
+    setHint ({});
+}
+
 NamiDJFXEditor::~NamiDJFXEditor() { setLookAndFeel (nullptr); }
 
 void NamiDJFXEditor::timerCallback()
@@ -1085,7 +1142,16 @@ void NamiDJFXEditor::paint (Graphics& g)
     g.drawText ("DJFX Standard", 40, 5, 320, 28, Justification::left, false);
     g.setFont (lnf.font (0.85f)); g.setColour (ui::dim);
     g.drawText ("MIDI  C1 BACKSPIN / C#1 BRAKE / D1 REVERSE / D#1 SCRATCH / E1 LOOP / F1 BEAT FX / F#1 RESYNC / G1 REC", 330, 12, 630, 14, Justification::right, false);
-    g.drawText ("BEAT FX x14   SOUND COLOR FX x6   JOG", 40, getHeight() - 26, 500, 14, Justification::left, false);
+    if (hint.first.isEmpty())
+        g.drawText ("BEAT FX x14   SOUND COLOR FX x6   JOG", 40, getHeight() - 26, 500, 14, Justification::left, false);
+    else
+    {   // 触っている部品の簡易説明
+        g.setFont (lnf.fontJp (0.85f)); g.setColour (ui::teal);
+        const int tw = (int) textWidth (lnf.fontJp (0.85f), hint.first) + 6;
+        g.drawText (hint.first, 40, getHeight() - 28, tw, 18, Justification::left, false);
+        g.setColour (ui::text.withAlpha (0.9f));
+        g.drawText (hint.second, 40 + tw + 8, getHeight() - 28, getWidth() - 40 - tw - 160, 18, Justification::left, true);
+    }
     g.drawText ("DJFX-STD", getWidth() - 140, getHeight() - 26, 100, 14, Justification::right, false);
 
     for (int dx : { 424, 644 })                                       // 区画の刻印線
