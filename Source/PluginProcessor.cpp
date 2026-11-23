@@ -50,8 +50,27 @@ bool NamiDJFXProcessor::isBusesLayoutSupported (const BusesLayout& l) const
 void NamiDJFXProcessor::prepareToPlay (double sr, int)
 {
     engine.prepare (sr);
+    hop = std::max (1, (int) (sr / 100.0));
+    accIn = accOut = 0.f; cntIn = cntOut = 0;
+    for (auto& a : waveIn) a.store (0.f);
+    for (auto& a : waveOut) a.store (0.f);
     std::fill (std::begin (midiHeld), std::end (midiHeld), 0);
     lastLatency = -1;
+}
+
+void NamiDJFXProcessor::pushPeaks (const float* L, const float* R, int n, float& acc, int& cnt, std::atomic<float>* ring, std::atomic<int>& w)
+{
+    for (int i = 0; i < n; ++i)
+    {
+        acc = std::max (acc, std::max (std::fabs (L[i]), R != nullptr ? std::fabs (R[i]) : 0.f));
+        if (++cnt >= hop)
+        {
+            const int wi = w.load (std::memory_order_relaxed);
+            ring[wi & (kWaveSize - 1)].store (acc, std::memory_order_relaxed);
+            w.store (wi + 1, std::memory_order_release);
+            acc = 0.f; cnt = 0;
+        }
+    }
 }
 
 void NamiDJFXProcessor::handleAsyncUpdate()
@@ -117,6 +136,7 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (lat != lastLatency) { lastLatency = lat; pendingLatency = lat; triggerAsyncUpdate(); }
 
     float* L = buffer.getWritePointer (0);
+    pushPeaks (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n, accIn, cntIn, waveIn, waveWIn);
     if (nCh >= 2)
         engine.process (L, buffer.getWritePointer (1), n, params, host, mask);
     else
@@ -125,7 +145,11 @@ void NamiDJFXProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         std::copy (L, L + n, tmp.begin());
         engine.process (L, tmp.data(), n, params, host, mask);
     }
+    pushPeaks (L, nCh >= 2 ? buffer.getReadPointer (1) : nullptr, n, accOut, cntOut, waveOut, waveWOut);
     jogLagMs = (float) (engine.jogLagSamples() / std::max (1.0, getSampleRate()) * 1000.0);
+    double nearS = 0, farS = 0;
+    if (engine.jogLoopRange (nearS, farS)) { loopNearMs = (float) (nearS * 1000.0 / getSampleRate()); loopFarMs = (float) (farS * 1000.0 / getSampleRate()); }
+    else { loopNearMs = -1.f; loopFarMs = -1.f; }
     for (int c = 2; c < nCh; ++c) buffer.clear (c, 0, n);
 }
 

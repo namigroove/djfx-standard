@@ -36,6 +36,12 @@ public:
     void setRecording (bool on);
     std::atomic<bool> recording { false };
 
+    // 波形表示用: 10msごとの最大値を直近約10秒ぶん(入力/出力)。オーディオスレッドが書き、画面が読む(ロック無し)
+    static constexpr int kWaveSize = 1024;
+    std::atomic<float> waveIn[kWaveSize], waveOut[kWaveSize];
+    std::atomic<int> waveWIn { 0 }, waveWOut { 0 };
+    std::atomic<float> loopNearMs { -1.f }, loopFarMs { -1.f };    // ループ中: ライブからの距離(ms)。ループ外は-1
+
 private:
     void handleAsyncUpdate() override;
     void parameterValueChanged (int, float) override {}
@@ -44,6 +50,8 @@ private:
     std::atomic<uint32_t> endedMask { 0 };    // 記録中に画面操作でジェスチャーが終わったパラメータ(つかみ直す)
     std::atomic<int> midiRec { -1 };          // MIDI(G1)の押下: 1=押した 0=離した -1=なし
     bool selfGesture = false, lastRecMidi = false;
+    void pushPeaks (const float* L, const float* R, int n, float& acc, int& cnt, std::atomic<float>* ring, std::atomic<int>& w);
+    float accIn = 0.f, accOut = 0.f; int cntIn = 0, cntOut = 0, hop = 480;
     djfx::Engine engine;
     int midiHeld[64] = {};   // ノートごとの押下状態
     int lastLatency = -1;

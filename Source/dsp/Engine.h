@@ -166,6 +166,7 @@ public:
     }
 
     double jogLagSamples() const { return jog.lagSamples(); }
+    bool jogLoopRange (double& nearS, double& farS) const { return jog.loopRangeLag (nearS, farS); }
     bool jogEngaged() const { return jog.engaged(); }
     static int latencyFor (float ms, double sr) { return (int) (ms * 0.001 * sr); }
 

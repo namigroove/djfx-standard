@@ -43,6 +43,14 @@ public:
     }
     bool engaged() const { return state != Idle; }
     double lagSamples() const { return lag; }
+    // ループ中なら、ループの手前端/奥端がライブからどれだけ過去か(サンプル)。波形表示用
+    bool loopRangeLag (double& nearS, double& farS) const
+    {
+        if (state != Loop) return false;
+        const double newest = (double) (wp - 1);
+        nearS = newest - loopEnd; farS = newest - loopStart;
+        return true;
+    }
 
     // DAWの停止/再生開始/シークで音が途切れる。以前の録音は別の時間のものなので、巻き戻しの対象から外す。
     void transportJump()

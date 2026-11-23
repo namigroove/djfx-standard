@@ -177,6 +177,19 @@ private:
     int dragStartIndex = 0;
 };
 
+// ジョグの左右に置く縦型の波形。上が「いま」、下に向かって過去(約6秒)。IN=入力、OUT=エフェクト後。
+class WaveStrip : public juce::Component, private juce::Timer
+{
+public:
+    WaveStrip (NamiDJFXProcessor& p, bool isOut) : proc (p), out (isOut) { startTimerHz (30); }
+    void paint (juce::Graphics&) override;
+private:
+    void timerCallback() override { repaint(); }
+    NamiDJFXProcessor& proc;
+    bool out;
+    static constexpr float kSpanMs = 6000.f;
+};
+
 class NamiDJFXEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -204,6 +217,7 @@ private:
     std::unique_ptr<FxSelector> fxSel;
     std::unique_ptr<XPad> xpad;
     std::unique_ptr<JogWheel> jog;
+    std::unique_ptr<WaveStrip> waveIn, waveOut;
     std::unique_ptr<FxDisplay> lcd;
     std::unique_ptr<Knob> kTime, kLevel, kColor, kParam, kBs, kRate, kBrake, kRelease, kLoop, kBpm, kOut;
     juce::OwnedArray<juce::TextButton> toggles;

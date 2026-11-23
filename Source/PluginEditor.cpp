@@ -70,16 +70,14 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
         g.setColour (ui::well); g.fillRoundedRectangle (tr, 6.f);
         g.setColour (ui::padEdge); g.drawRoundedRectangle (tr, 6.f, 1.f);
         const float kx = on ? tr.getRight() - 6.f : tr.getX() + 6.f;
-        ColourGradient gr (Colour (0xffe8edf2), kx, cy - 5.f, Colour (0xff8a949e), kx, cy + 5.f, false);
-        g.setGradientFill (gr); g.fillEllipse (kx - 5.5f, cy - 5.5f, 11.f, 11.f);
+        g.setColour (Colour (0xffc9d1da)); g.fillEllipse (kx - 5.5f, cy - 5.5f, 11.f, 11.f);
         return;
     }
     if ((bool) b.getProperties().getWithDefault ("silver", false))
     {
         // 実機のSOUND COLOR FXボタン: 銀の縁取りの四角いパッド。選択中は中が点く
         r = r.reduced (1.f);
-        ColourGradient eg (Colour (0xffd9dee4), r.getX(), r.getY(), Colour (0xff7d8791), r.getX(), r.getBottom(), false);
-        g.setGradientFill (eg); g.fillRoundedRectangle (r, 3.f);
+        g.setColour (Colour (0xffb4bdc7)); g.fillRoundedRectangle (r, 3.f);
         auto in = r.reduced (2.5f);
         g.setColour (down ? Colour (0xff0a1022) : ui::padOff); g.fillRoundedRectangle (in, 2.f);
         if (on) { g.setColour (accent.withAlpha (0.38f)); g.fillRoundedRectangle (in, 2.f); g.setColour (accent.withAlpha (0.9f)); g.drawRoundedRectangle (in, 2.f, 1.f); }
@@ -149,20 +147,17 @@ static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool
     if (knurl)
     {
         // 銀の胴 + 細かい溝(ローレット) + 平らな銀の天面
-        ColourGradient body (Colour (0xffe6eaee), c.x - rBody, c.y - rBody, Colour (0xff6f7882), c.x + rBody, c.y + rBody, false);
-        g.setGradientFill (body);
+        g.setColour (Colour (0xffaab3be));
         g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
         for (int i = 0; i < 90; ++i)
         {
             const float a = MathConstants<float>::twoPi * (float) i / 90.f;
-            const float shade = 0.5f + 0.5f * std::sin (a - 0.8f);            // 左上から光が当たる
-            g.setColour (Colour (0xff3b434d).withAlpha (0.25f + 0.35f * (1.f - shade)));
+            g.setColour (Colour (0xff3b434d).withAlpha (0.4f));
             g.drawLine (c.x + std::sin (a) * (rBody - 5.f), c.y - std::cos (a) * (rBody - 5.f),
                         c.x + std::sin (a) * (rBody - 0.5f), c.y - std::cos (a) * (rBody - 0.5f), 1.3f);
         }
         const float rt = rBody - 6.f;
-        ColourGradient top (Colour (0xffd2d8de), c.x - rt, c.y - rt, Colour (0xff98a1ab), c.x + rt, c.y + rt, false);
-        g.setGradientFill (top); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
+        g.setColour (Colour (0xffc9d1da)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
         g.setColour (Colour (0xff59616b)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
         g.setColour (Colour (0xff1c2330));                                   // 銀の面に黒いポインタ
         g.drawLine (c.x + std::sin (angle) * (rBody * 0.30f), c.y - std::cos (angle) * (rBody * 0.30f),
@@ -739,6 +734,8 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     latency = std::make_unique<ChoiceGroup> (s, ids::jogLatency, StringArray { "0", "60", "125", "250", "500" }, 5, 3);
     xpad = std::make_unique<XPad> (s);
     jog = std::make_unique<JogWheel> (s);
+    waveIn = std::make_unique<WaveStrip> (proc, false); waveOut = std::make_unique<WaveStrip> (proc, true);
+    addAndMakeVisible (*waveIn); addAndMakeVisible (*waveOut);
     lcd = std::make_unique<FxDisplay> (proc);
     for (auto* c : { (Component*) fxSel.get(), (Component*) colorTypes.get(), (Component*) latency.get(),
                      (Component*) xpad.get(), (Component*) jog.get(), (Component*) lcd.get() })
@@ -915,24 +912,58 @@ void NamiDJFXEditor::timerCallback()
     repaint (boxC.withTrimmedTop (400));      // 遅れ表示
 }
 
+void WaveStrip::paint (Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat();
+    g.setColour (ui::well); g.fillRoundedRectangle (b, 3.f);
+    g.setColour (ui::padEdge); g.drawRoundedRectangle (b.reduced (0.5f), 3.f, 1.f);
+    const auto in = b.reduced (3.f, 14.f);
+    const float cx = in.getCentreX();
+    const auto& ring = out ? proc.waveOut : proc.waveIn;
+    const int w = (out ? proc.waveWOut : proc.waveWIn).load (std::memory_order_acquire);
+    const int rows = (int) in.getHeight();
+    const float binsPerRow = (kSpanMs / 10.f) / (float) rows;
+    const float lagMs = proc.jogLagMs.load();
+    const float nearMs = proc.loopNearMs.load(), farMs = proc.loopFarMs.load();
+    auto yOf = [&] (float ms) { return in.getY() + ms / kSpanMs * in.getHeight(); };
+
+    if (! out && nearMs >= 0.f)                                        // ループ範囲
+    {
+        const float y0 = yOf (nearMs), y1 = yOf (farMs);
+        g.setColour (ui::teal.withAlpha (0.18f));
+        g.fillRect (in.getX(), std::max (in.getY(), y0), in.getWidth(), std::min (in.getBottom(), y1) - std::max (in.getY(), y0));
+    }
+    g.setColour (out ? ui::amber.withAlpha (0.85f) : ui::teal.withAlpha (0.85f));
+    for (int r = 0; r < rows; ++r)
+    {
+        float pk = 0.f;
+        const int b0 = (int) ((float) r * binsPerRow), b1 = std::max (b0 + 1, (int) ((float) (r + 1) * binsPerRow));
+        for (int k = b0; k < b1; ++k)
+        {
+            const int idx = w - 1 - k;
+            if (idx < 0) break;
+            pk = std::max (pk, ring[idx & (NamiDJFXProcessor::kWaveSize - 1)].load (std::memory_order_relaxed));
+        }
+        const float half = std::min (1.f, std::sqrt (pk)) * (in.getWidth() * 0.5f - 1.f);
+        if (half > 0.2f) g.drawHorizontalLine ((int) (in.getY() + (float) r), cx - half, cx + half);
+    }
+    if (! out)                                                         // 再生ヘッド(ライブからの遅れ)
+    {
+        const float y = std::min (in.getBottom(), yOf (lagMs));
+        g.setColour (ui::amber); g.drawHorizontalLine ((int) y, in.getX(), in.getRight());
+    }
+    g.setColour (ui::dim); if (auto* l = dynamic_cast<NamiLnF*> (&getLookAndFeel())) g.setFont (l->font (0.8f)); else g.setFont (Font (11.f));
+    g.drawText (out ? "OUT" : "IN", getLocalBounds().removeFromTop (14), Justification::centred, false);
+    g.drawText ("-6s", getLocalBounds().removeFromBottom (14), Justification::centred, false);
+}
+
 // 面板の金属テクスチャ(粒状のノイズ + 横方向のヘアライン)。毎回同じ模様になるよう乱数は固定。
+// 面板は単色(グラデーション・質感なし)
 void NamiDJFXEditor::buildFace (int w, int h)
 {
     faceImage = Image (Image::RGB, w, h, false);
-    Image::BitmapData bd (faceImage, Image::BitmapData::writeOnly);
-    Random rnd (20261122);
-    const float br = ui::face.getFloatRed() * 255.f, bg_ = ui::face.getFloatGreen() * 255.f, bb = ui::face.getFloatBlue() * 255.f;
-    float rowBias = 0.f;
-    for (int y = 0; y < h; ++y)
-    {
-        rowBias = rowBias * 0.55f + (rnd.nextFloat() - 0.5f) * 3.2f;
-        for (int x = 0; x < w; ++x)
-        {
-            const float n = (rnd.nextFloat() - 0.5f) * 3.6f + rowBias + std::sin ((float) x * 0.012f + (float) y * 0.05f) * 0.9f;
-            auto cl = [] (float v) { return (uint8) jlimit (0.f, 255.f, v); };
-            bd.setPixelColour (x, y, Colour (cl (br + n), cl (bg_ + n * 1.05f), cl (bb + n * 1.2f)));
-        }
-    }
+    Graphics g (faceImage);
+    g.fillAll (ui::face);
 }
 
 void NamiDJFXEditor::sectionHeader (Graphics& g, Rectangle<int> r, const String& title)
@@ -947,7 +978,6 @@ void NamiDJFXEditor::sectionHeader (Graphics& g, Rectangle<int> r, const String&
         const int x0 = side ? cx + tw / 2 + 12 : r.getX() + 6;
         const int x1 = side ? r.getRight() - 6 : cx - tw / 2 - 12;
         g.setColour (ui::line);         g.drawHorizontalLine (y, (float) x0, (float) x1);
-        g.setColour (Colour (0x22ffffff)); g.drawHorizontalLine (y + 1, (float) x0, (float) x1);
     }
 }
 
@@ -958,9 +988,8 @@ void NamiDJFXEditor::paint (Graphics& g)
     g.drawImageAt (faceImage, 0, 0);
 
     // 上の帯(タイトル)と下の帯
-    g.setColour (ui::bg.withAlpha (0.55f)); g.fillRect (0, 0, getWidth(), 38); g.fillRect (0, getHeight() - 36, getWidth(), 36);
+    g.setColour (ui::bg); g.fillRect (0, 0, getWidth(), 38); g.fillRect (0, getHeight() - 36, getWidth(), 36);
     g.setColour (ui::line); g.drawHorizontalLine (38, 0.f, (float) getWidth()); g.drawHorizontalLine (getHeight() - 36, 0.f, (float) getWidth());
-    g.setColour (Colour (0x22ffffff)); g.drawHorizontalLine (39, 0.f, (float) getWidth());
 
     g.setColour (ui::text);
     g.setFont (lnf.fontBold (1.5f));
@@ -972,8 +1001,7 @@ void NamiDJFXEditor::paint (Graphics& g)
 
     for (int dx : { 424, 644 })                                       // 区画の刻印線
     {
-        g.setColour (Colour (0xff070c1c)); g.drawVerticalLine (dx, 50.f, 592.f);
-        g.setColour (Colour (0x28ffffff)); g.drawVerticalLine (dx + 1, 50.f, 592.f);
+        g.setColour (ui::line); g.drawVerticalLine (dx, 50.f, 592.f);
     }
     sectionHeader (g, boxA, "BEAT FX");
     sectionHeader (g, boxB, "SOUND COLOR FX");
@@ -996,7 +1024,7 @@ void NamiDJFXEditor::paint (Graphics& g)
         g.setFont (lnf.font (0.75f)); g.setColour (ui::dim);
         g.drawText (lagMs < 1.f ? String() : String (lagMs / beatMs, 2) + " beat", lx, ly + 28, 78, 12, Justification::centred, false);
     }
-    for (int dx : { 0, 1 }) { g.setColour (dx ? Colour (0x22ffffff) : ui::line); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getX() + 8.f, (float) boxA.getCentreX() - 28.f); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getCentreX() + 28.f, (float) boxA.getRight() - 8.f); }
+    for (int dx : { 0 }) { g.setColour (ui::line); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getX() + 8.f, (float) boxA.getCentreX() - 28.f); g.drawHorizontalLine (boxA.getY() + 151 + dx, (float) boxA.getCentreX() + 28.f, (float) boxA.getRight() - 8.f); }
 
     for (auto pt : { Point<float> (18.f, 19.f), Point<float> ((float) getWidth() - 18.f, 19.f),
                      Point<float> (18.f, (float) getHeight() - 18.f), Point<float> ((float) getWidth() - 18.f, (float) getHeight() - 18.f) })
@@ -1040,6 +1068,8 @@ void NamiDJFXEditor::resized()
 
     // JOG
     jog->setBounds (at (boxC, 76, 26, 190, 190));
+    waveIn->setBounds (at (boxC, 6, 26, 62, 190));
+    waveOut->setBounds (at (boxC, 274, 26, 62, 190));
     hBack->setBounds (at (boxC, 6, 222, 80, 28));
     hBrake->setBounds (at (boxC, 90, 222, 80, 28));
     hRev->setBounds (at (boxC, 174, 222, 80, 28));
