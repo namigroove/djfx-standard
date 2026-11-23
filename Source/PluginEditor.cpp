@@ -163,22 +163,21 @@ static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool
     if (knurl)
     {
         // 銀の胴 + 細かい溝(ローレット) + 平らな銀の天面
-        g.setColour (Colour (0xff131314));                                   // つや消しの黒い胴 + 細かい溝(ローレット)
+        g.setColour (Colour (0xffb8b8bc));                                   // 銀の胴 + 細かい溝(ローレット) + 平らな銀の天面
         g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
         for (int i = 0; i < 90; ++i)
         {
             const float a = MathConstants<float>::twoPi * (float) i / 90.f;
-            g.setColour (Colour (0xff3f3f43));
+            g.setColour (Colour (0xff6d6d72));
             g.drawLine (c.x + std::sin (a) * (rBody - 5.f), c.y - std::cos (a) * (rBody - 5.f),
                         c.x + std::sin (a) * (rBody - 0.5f), c.y - std::cos (a) * (rBody - 0.5f), 1.2f);
         }
-        g.setColour (Colour (0xffc4c4c8)); g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.4f);   // 銀の縁
         const float rt = rBody - 6.f;
-        g.setColour (Colour (0xff1d1d1f)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
-        g.setColour (Colour (0xff3a3a3e)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
-        g.setColour (ui::text);                                              // 白いポインタ
-        g.drawLine (c.x + std::sin (angle) * (rBody * 0.25f), c.y - std::cos (angle) * (rBody * 0.25f),
-                    c.x + std::sin (angle) * (rBody - 3.f), c.y - std::cos (angle) * (rBody - 3.f), 3.f);
+        g.setColour (Colour (0xffd0d0d3)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
+        g.setColour (Colour (0xff77777c)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
+        g.setColour (Colour (0xff161617));                                   // 銀の面に黒いポインタ
+        g.drawLine (c.x + std::sin (angle) * (rBody * 0.30f), c.y - std::cos (angle) * (rBody * 0.30f),
+                    c.x + std::sin (angle) * (rt - 3.f), c.y - std::cos (angle) * (rt - 3.f), 3.f);
         return;
     }
     {
@@ -417,6 +416,11 @@ void XPad::paint (Graphics& g)
     for (int ix = 1; ix < 16; ++ix)
         for (int iy = 1; iy < 7; ++iy)
             g.fillRect (r.getWidth() * (float) ix / 16.f - 0.5f, r.getHeight() * (float) iy / 7.f - 0.5f, 1.5f, 1.5f);
+    {   // 実機のX-PADの青い発光(下から立ち上がる)。触っている間は触れた位置が強く光る
+        g.setColour (ui::teal.withAlpha (touching ? 0.22f : 0.12f)); g.fillRect (3.f, r.getHeight() - 9.f, r.getWidth() - 6.f, 6.f);
+        g.setColour (ui::teal.withAlpha (0.8f)); g.fillRect (3.f, r.getHeight() - 4.f, r.getWidth() - 6.f, 1.5f);
+        if (touching) { g.setColour (ui::teal.withAlpha (0.35f)); g.fillRect (x * r.getWidth() - 24.f, 3.f, 48.f, r.getHeight() - 6.f); }
+    }
     g.setColour (touching ? ui::amber : ui::padEdge);
     g.drawRoundedRectangle (r.reduced (0.5f), 3.f, 1.f);
     const float px = x * r.getWidth();
@@ -478,7 +482,7 @@ void JogWheel::paint (Graphics& g)
     // CDJ-3000風: 銀の外周リング / くぼみが並ぶ黒いリング / つやのある黒い盤 / 中央の色付きリング
     g.setColour (Colour (0xffb8b8bc)); g.fillEllipse (circle (R));
     g.setColour (Colour (0xff6a6a6f)); g.drawEllipse (circle (R), 1.f);
-    g.setColour (dragging ? ui::amber : Colour (0xff2a2a2d)); g.drawEllipse (circle (R - 6.f), 1.5f);
+    g.setColour (dragging ? ui::amber : ui::teal.withAlpha (0.9f)); g.drawEllipse (circle (R - 7.f), 2.f);   // 周りのLEDリング
     g.setColour (Colour (0xff0b0b0c)); g.fillEllipse (circle (R - 6.f));
     const float rr = R - 17.f;
     for (int i = 0; i < 40; ++i)                                                  // 回るくぼみ
@@ -506,8 +510,16 @@ void JogWheel::paint (Graphics& g)
         g.strokePath (arc, PathStrokeType (3.5f, PathStrokeType::curved, PathStrokeType::butt));
     }
     const float rc = ra - 10.f;
-    g.setColour (ui::panel); g.fillEllipse (circle (rc));
-    g.setColour (ui::padEdge); g.drawEllipse (circle (rc), 1.f);
+    g.setColour (Colour (0xff0b0b0c)); g.fillEllipse (circle (rc));
+    {   // 中央の色付きリング(CDJ-3000のジョグディスプレイ風)。回転に合わせて色が回る
+        const Colour cols[4] = { Colour (0xffe0409a), Colour (0xff3d7bff), Colour (0xfff08a1c), Colour (0xff35c2b0) };
+        for (int i = 0; i < 4; ++i)
+        {
+            Path seg; const float st = shown + MathConstants<float>::halfPi * (float) i;
+            seg.addCentredArc (c.x, c.y, rc - 2.f, rc - 2.f, 0.f, st + 0.06f, st + MathConstants<float>::halfPi - 0.06f, true);
+            g.setColour (cols[i]); g.strokePath (seg, PathStrokeType (3.f));
+        }
+    }
     auto& l = dynamic_cast<NamiLnF&> (getLookAndFeel());
     g.setFont (l.fontBold (0.95f)); g.setColour (ui::text);
     g.drawText ("SCRATCH", Rectangle<int> ((int) (c.x - rc), (int) (c.y - 14), (int) (rc * 2), 14), Justification::centred, false);
