@@ -9,12 +9,12 @@ if(NOT JUCE_DIR)
 endif()
 add_subdirectory(${JUCE_DIR} JUCE EXCLUDE_FROM_ALL)
 
-# UIフォント(Ricty Diminished Discord)を埋め込む。無ければ標準の等幅フォントで表示。
-set(FONT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/UIFont.ttf)
-set(FONT_FILE_BOLD ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/UIFontBold.ttf)
+# UIフォント: 英数字は Roboto、日本語は Noto Sans JP(使う文字だけに絞ったもの)を埋め込む。無ければ標準フォントで表示。
+set(FONT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Roboto-Regular.ttf)
+set(FONT_FILE_JP ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/NotoSansJP-Medium-subset.ttf)
 set(HAS_FONT FALSE)
-if(EXISTS ${FONT_FILE} AND EXISTS ${FONT_FILE_BOLD})
-  juce_add_binary_data(NamiDJFXAssets SOURCES ${FONT_FILE} ${FONT_FILE_BOLD})
+if(EXISTS ${FONT_FILE} AND EXISTS ${FONT_FILE_JP})
+  juce_add_binary_data(NamiDJFXAssets SOURCES ${FONT_FILE} ${FONT_FILE_JP})
   set(HAS_FONT TRUE)
 endif()
 

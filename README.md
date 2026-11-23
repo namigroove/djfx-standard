@@ -1,7 +1,7 @@
 # DJFX Standard
 
 DJミキサー(DJM-A9)とプレーヤー(CDJ-3000)のエフェクト操作を、DAW上のVST3で再現するプラグイン。
-Windows / Mac のVST3。出力ファイルは `DJFX Standard.vst3`(CMakeのターゲット名は内部名のまま `NamiDJFX`)。UIは実機(ミキサー/プレーヤー)の面板をイメージした見た目で、フォントは Ricty Diminished Discord を埋め込んでいます。配色は #0B132B #1C2541 #3A506B #5BC0BE #F3C969 を基調にしています。拍の同期はDAWのテンポに合わせます。
+Windows / Mac のVST3。出力ファイルは `DJFX Standard.vst3`(CMakeのターゲット名は内部名のまま `NamiDJFX`)。UIは実機(ミキサー/プレーヤー)の面板をイメージした見た目で、フォントは Roboto(英数字)/ Noto Sans JP(日本語) を埋め込んでいます。配色は #0B132B #1C2541 #3A506B #5BC0BE #F3C969 を基調にしています。拍の同期はDAWのテンポに合わせます。
 
 **公式の製品ではありません。** 音・パラメータの範囲は、取扱説明書の記載をもとに耳と数値で寄せた近似です。
 配布する場合は、製品名や商標になりうる名前(DJM・CDJ・Pioneer、SPIRAL/HELIX/MOBIUS など)を
@@ -105,3 +105,9 @@ CENTER LOCK: ON のときCOLORを速く回しても中央で止まり、手を�
 - INERTIA ノブ(0〜3000ms、数字入力可、0でOFF): スクラッチを離したとき、離した速度から等速へこの時間かけて滑らかに戻る。長いほど盤が勢いで回り続ける。SLIP ON のときは等速に戻ってからライブ位置へ戻る。
 - KEY LOCK(ボタン): ONにすると、スクラッチ/BACKSPIN/BRAKE/REVERSE中も音程が変わらない(50msのグレイン方式)。OFFはテープ式(速度=音程)。止まっている間は無音。
 - STOP Q(ボタン): BACKSPIN/BRAKEを押した瞬間に、止まる位置が次の拍の目盛り(QUANTIZEの1/8・1/4・1/2・1)に乗るよう、止まるまでの時間を延ばす。DAWが再生中で拍の位置がわかるときだけ働く。
+
+## 見た目(CDJ-3000 / DJM-A9 に寄せた配色)
+- 面板は黒いつや消し、印字は灰色〜白、点灯するものだけ色が付く(青=ボタンの光、橙=CUE、紫=液晶のX-PAD帯)。
+- JOGの4つのホールドボタン(BACKSPIN/BRAKE/REVERSE/LOOP)は実機のCUEボタンと同じ橙。押している間は明るく点く。
+- ジョグは銀の外周リング・くぼみが並ぶ黒いリング・黒い盤・中央の色付きリング(CDJ-3000風)。
+- フォント: 英数字は Roboto、日本語は Noto Sans JP(メニューなど)。日本語の文字を増やしたときは、`assets/fonts/NotoSansJP-Medium-subset.ttf` を作り直す(使う文字だけに絞ってあるため)。

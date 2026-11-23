@@ -6,27 +6,29 @@ namespace ui
 {
 // 実機(ミキサー/プレーヤー)の面板をイメージした配色。基調はパレット(#0B132B #1C2541 #3A506B #5BC0BE #F3C969)。
 // 面板は金属テクスチャ、文字はシルク印刷、点灯するものだけ色が付く。
-const juce::Colour bg      (0xff0b132b);
-const juce::Colour face    (0xff131c36);   // 面板の地(#0B132Bと#1C2541の間)
-const juce::Colour panel   (0xff1c2541);
-const juce::Colour line    (0xff3a506b);   // 刻印の線・ノブの縁
-const juce::Colour padOff  (0xff0e1527);   // 押されていないパッド
-const juce::Colour padEdge (0xff2c3b57);
-const juce::Colour well    (0xff060b1a);   // 凹み(液晶・X-PAD・ジョグ)
-const juce::Colour ink     (0xff0b132b);
-const juce::Colour text    (0xffe3e9f2);   // シルク文字
-const juce::Colour dim     (0xff8197b3);
-const juce::Colour teal    (0xff5bc0be);
-const juce::Colour amber   (0xfff3c969);
+const juce::Colour bg      (0xff0a0a0b);
+const juce::Colour face    (0xff151516);   // 面板の地(#0B132Bと#1C2541の間)
+const juce::Colour panel   (0xff1d1d1f);
+const juce::Colour line    (0xff4a4a4f);   // 刻印の線・ノブの縁
+const juce::Colour padOff  (0xff0f0f10);   // 押されていないパッド
+const juce::Colour padEdge (0xff38383c);
+const juce::Colour well    (0xff040405);   // 凹み(液晶・X-PAD・ジョグ)
+const juce::Colour ink     (0xff0a0a0b);
+const juce::Colour text    (0xffe2e2e4);   // シルク文字
+const juce::Colour dim     (0xff8b8b90);
+const juce::Colour teal    (0xff3d7bff);
+const juce::Colour amber   (0xfff08a1c);
 }
 
-// フォントは Ricty Diminished Discord(assets/fonts/UIFont*.ttf)を埋め込む。無ければ等幅フォントで代用。
+// フォントは英数字が Roboto、日本語が Noto Sans JP(assets/fonts)。無ければ等幅フォントで代用。
 class NamiLnF : public juce::LookAndFeel_V4
 {
 public:
     NamiLnF();
     juce::Font font (float scale = 1.f) const;
     juce::Font fontBold (float scale = 1.f) const;
+    juce::Font fontJp (float scale = 1.f) const;                       // 日本語(Noto Sans JP)。メニューなど
+    juce::Font getPopupMenuFont() override { return fontJp (1.f); }
     juce::Font getTextButtonFont (juce::TextButton&, int) override { return font(); }
     juce::Font getLabelFont (juce::Label&) override { return font(); }
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override;
@@ -34,7 +36,7 @@ public:
     void drawRotarySlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider&) override;
     bool hasEmbeddedFont() const { return embedded; }
 private:
-    juce::Typeface::Ptr face, faceBold;
+    juce::Typeface::Ptr face, faceBold, faceJp;
     bool embedded = false;
 };
 

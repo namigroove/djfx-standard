@@ -1,9 +1,7 @@
 # フォント
 
-UIのフォントは **Ricty Diminished Discord**(Regular / Bold)を埋め込んでいます。
-配布元のTTCから、Regular を `UIFont.ttf`、Bold を `UIFontBold.ttf` として取り出したものです
-(TTCのままだとWindowsのVST3に埋め込むときに不安定になりやすいため)。
+- 英数字: **Roboto Regular** (`Roboto-Regular.ttf`)
+- 日本語: **Noto Sans JP Medium** (`NotoSansJP-Medium-subset.ttf`)。UIで使う文字だけに絞ったサブセットです(元は約5.7MB)。
 
-- ライセンス: SIL Open Font License 1.1(フォント本体の著作権表示は元のTTCのnameテーブルに残っています)。
-  再配布する場合は、配布元の同梱ライセンス文書も一緒に添えてください。
-- 差し替えるときは同じ名前でTTFを置き換えるだけです。
+どちらも SIL Open Font License 1.1 / Apache License 2.0 などのオープンライセンスです。再配布するときは配布元のライセンス文書を添えてください。
+ポップアップメニューの日本語に Noto を使い、それ以外の表示は Roboto です。

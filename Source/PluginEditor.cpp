@@ -15,8 +15,9 @@ static float textWidth (const Font& f, const String& s)
 NamiLnF::NamiLnF()
 {
 #if NAMIDJFX_HAS_FONT
-    face = Typeface::createSystemTypefaceFor (BinaryData::UIFont_ttf, (size_t) BinaryData::UIFont_ttfSize);
-    faceBold = Typeface::createSystemTypefaceFor (BinaryData::UIFontBold_ttf, (size_t) BinaryData::UIFontBold_ttfSize);
+    face = Typeface::createSystemTypefaceFor (BinaryData::RobotoRegular_ttf, (size_t) BinaryData::RobotoRegular_ttfSize);
+    faceBold = face;                                                  // Robotoは1ウェイトだけ。強調は色と大きさで付ける
+    faceJp = Typeface::createSystemTypefaceFor (BinaryData::NotoSansJPMediumsubset_ttf, (size_t) BinaryData::NotoSansJPMediumsubset_ttfSize);
     embedded = face != nullptr;
 #endif
     setColour (Label::textColourId, ui::text);
@@ -26,6 +27,11 @@ Font NamiLnF::font (float scale) const
 {
     if (face != nullptr) return Font (FontOptions (face).withHeight (13.f * scale));
     return Font (FontOptions (Font::getDefaultMonospacedFontName(), 11.f * scale, Font::plain));
+}
+Font NamiLnF::fontJp (float scale) const
+{
+    if (faceJp != nullptr) return Font (FontOptions (faceJp).withHeight (13.f * scale));
+    return font (scale);
 }
 Font NamiLnF::fontBold (float scale) const
 {
@@ -63,24 +69,33 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
     {
         // 実機のCENTER LOCK: OFF ○━ ON のスライドスイッチ + 点灯する小窓
         const float cy = r.getCentreY();
-        g.setColour (on ? ui::amber : Colour (0xff3a2f14));
+        g.setColour (on ? ui::amber : Colour (0xff4a2d0c));
         g.fillRoundedRectangle (r.getX() + 4.f, cy - 3.f, 14.f, 6.f, 1.5f);
         g.setColour (ui::padEdge); g.drawRoundedRectangle (r.getX() + 4.f, cy - 3.f, 14.f, 6.f, 1.5f, 1.f);
         auto tr = Rectangle<float> (r.getRight() - 40.f, cy - 6.f, 28.f, 12.f);
         g.setColour (ui::well); g.fillRoundedRectangle (tr, 6.f);
         g.setColour (ui::padEdge); g.drawRoundedRectangle (tr, 6.f, 1.f);
         const float kx = on ? tr.getRight() - 6.f : tr.getX() + 6.f;
-        g.setColour (Colour (0xffc9d1da)); g.fillEllipse (kx - 5.5f, cy - 5.5f, 11.f, 11.f);
+        g.setColour (Colour (0xffd0d0d3)); g.fillEllipse (kx - 5.5f, cy - 5.5f, 11.f, 11.f);
         return;
     }
     if ((bool) b.getProperties().getWithDefault ("silver", false))
     {
         // 実機のSOUND COLOR FXボタン: 銀の縁取りの四角いパッド。選択中は中が点く
         r = r.reduced (1.f);
-        g.setColour (Colour (0xffb4bdc7)); g.fillRoundedRectangle (r, 3.f);
+        g.setColour (Colour (0xffc4c4c8)); g.fillRoundedRectangle (r, 3.f);
         auto in = r.reduced (2.5f);
-        g.setColour (down ? Colour (0xff0a1022) : ui::padOff); g.fillRoundedRectangle (in, 2.f);
+        g.setColour (down ? Colour (0xff070708) : ui::padOff); g.fillRoundedRectangle (in, 2.f);
         if (on) { g.setColour (accent.withAlpha (0.38f)); g.fillRoundedRectangle (in, 2.f); g.setColour (accent.withAlpha (0.9f)); g.drawRoundedRectangle (in, 2.f, 1.f); }
+        return;
+    }
+    if ((bool) b.getProperties().getWithDefault ("cue", false))
+    {
+        // 実機のCUEボタン: 橙の塗りの角丸。押している間は明るく点く
+        r = r.reduced (0.5f);
+        const bool lit = on || down;
+        g.setColour (lit ? Colour (0xffffa63a) : Colour (0xffc9731a)); g.fillRoundedRectangle (r, 3.f);
+        g.setColour (Colour (0xff3a2208)); g.drawRoundedRectangle (r, 3.f, 1.f);
         return;
     }
     r = r.reduced (0.5f);
@@ -91,7 +106,7 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
     {
         g.setColour (on ? accent : ui::padEdge);
         g.drawRoundedRectangle (r, 3.f, 2.f);
-        g.setColour (on ? accent.withAlpha (0.45f) : Colour (0xff18233e));
+        g.setColour (on ? accent.withAlpha (0.45f) : Colour (0xff1e1e20));
         g.drawRoundedRectangle (r.reduced (3.f), 2.f, 1.f);
     }
     else
@@ -102,7 +117,7 @@ void NamiLnF::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool 
     if ((bool) b.getProperties().getWithDefault ("led", false))
     {
         const float cy = r.getCentreY();
-        g.setColour (on ? accent : Colour (0xff202c47));
+        g.setColour (on ? accent : Colour (0xff2a2a2d));
         g.fillEllipse (r.getX() + 7.f, cy - 2.5f, 5.f, 5.f);
     }
 }
@@ -134,6 +149,7 @@ void NamiLnF::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     }
     g.setFont (font (round ? 0.8f : 0.9f));
     g.setColour (on ? (round ? ui::text : accent) : ui::text.withAlpha (0.82f));
+    if ((bool) b.getProperties().getWithDefault ("cue", false)) g.setColour (Colour (0xff141414));
     auto area = b.getLocalBounds().reduced (2, 0);
     if ((bool) b.getProperties().getWithDefault ("led", false)) area.removeFromLeft (10);
     g.drawText (b.getButtonText(), area, Justification::centred, false);
@@ -147,29 +163,30 @@ static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool
     if (knurl)
     {
         // 銀の胴 + 細かい溝(ローレット) + 平らな銀の天面
-        g.setColour (Colour (0xffaab3be));
+        g.setColour (Colour (0xff131314));                                   // つや消しの黒い胴 + 細かい溝(ローレット)
         g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
         for (int i = 0; i < 90; ++i)
         {
             const float a = MathConstants<float>::twoPi * (float) i / 90.f;
-            g.setColour (Colour (0xff3b434d).withAlpha (0.4f));
+            g.setColour (Colour (0xff3f3f43));
             g.drawLine (c.x + std::sin (a) * (rBody - 5.f), c.y - std::cos (a) * (rBody - 5.f),
-                        c.x + std::sin (a) * (rBody - 0.5f), c.y - std::cos (a) * (rBody - 0.5f), 1.3f);
+                        c.x + std::sin (a) * (rBody - 0.5f), c.y - std::cos (a) * (rBody - 0.5f), 1.2f);
         }
+        g.setColour (Colour (0xffc4c4c8)); g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.4f);   // 銀の縁
         const float rt = rBody - 6.f;
-        g.setColour (Colour (0xffc9d1da)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
-        g.setColour (Colour (0xff59616b)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
-        g.setColour (Colour (0xff1c2330));                                   // 銀の面に黒いポインタ
-        g.drawLine (c.x + std::sin (angle) * (rBody * 0.30f), c.y - std::cos (angle) * (rBody * 0.30f),
-                    c.x + std::sin (angle) * (rt - 3.f), c.y - std::cos (angle) * (rt - 3.f), 3.f);
+        g.setColour (Colour (0xff1d1d1f)); g.fillEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2);
+        g.setColour (Colour (0xff3a3a3e)); g.drawEllipse (c.x - rt, c.y - rt, rt * 2, rt * 2, 1.f);
+        g.setColour (ui::text);                                              // 白いポインタ
+        g.drawLine (c.x + std::sin (angle) * (rBody * 0.25f), c.y - std::cos (angle) * (rBody * 0.25f),
+                    c.x + std::sin (angle) * (rBody - 3.f), c.y - std::cos (angle) * (rBody - 3.f), 3.f);
         return;
     }
     {
         g.setColour (ui::ink);                               // 黒い胴
         g.fillEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2);
-        g.setColour (dimmed ? ui::dim : ui::text);           // 白いリング
-        g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 2.4f);
-        g.setColour (Colour (0xff17213b));
+        g.setColour (dimmed ? ui::dim : Colour (0xffcfcfd3));   // 銀のリング
+        g.drawEllipse (c.x - rBody, c.y - rBody, rBody * 2, rBody * 2, 1.8f);
+        g.setColour (Colour (0xff2a2a2d));
         g.drawEllipse (c.x - rBody + 4.f, c.y - rBody + 4.f, (rBody - 4.f) * 2, (rBody - 4.f) * 2, 1.f);
     }
     g.setColour (dimmed ? ui::dim : ui::text);               // 白い太いポインタ
@@ -396,7 +413,7 @@ void XPad::paint (Graphics& g)
     g.setColour (ui::well);
     g.fillRoundedRectangle (r, 3.f);
     if (touching) { g.setColour (ui::amber.withAlpha (0.12f)); g.fillRoundedRectangle (r, 3.f); }
-    g.setColour (Colour (0xff1c2a47));                          // 面のドット格子
+    g.setColour (Colour (0xff2a2a2d));                          // 面のドット格子
     for (int ix = 1; ix < 16; ++ix)
         for (int iy = 1; iy < 7; ++iy)
             g.fillRect (r.getWidth() * (float) ix / 16.f - 0.5f, r.getHeight() * (float) iy / 7.f - 0.5f, 1.5f, 1.5f);
@@ -458,32 +475,35 @@ void JogWheel::paint (Graphics& g)
     const float R = std::min (r.getWidth(), r.getHeight()) * 0.5f;
     auto circle = [&] (float rad) { return Rectangle<float> (c.x - rad, c.y - rad, rad * 2, rad * 2); };
 
-    g.setColour (ui::well);    g.fillEllipse (circle (R));                       // 外側のベゼル
-    g.setColour (ui::padEdge); g.drawEllipse (circle (R), 1.f);
-    g.setColour (Colour (0xff0a1226)); g.fillEllipse (circle (R - 5.f));         // ジョグ面
-    g.setColour (dragging ? ui::amber.withAlpha (0.8f) : Colour (0xff1c2a47));
-    g.drawEllipse (circle (R - 5.f), 1.f);
-
+    // CDJ-3000風: 銀の外周リング / くぼみが並ぶ黒いリング / つやのある黒い盤 / 中央の色付きリング
+    g.setColour (Colour (0xffb8b8bc)); g.fillEllipse (circle (R));
+    g.setColour (Colour (0xff6a6a6f)); g.drawEllipse (circle (R), 1.f);
+    g.setColour (dragging ? ui::amber : Colour (0xff2a2a2d)); g.drawEllipse (circle (R - 6.f), 1.5f);
+    g.setColour (Colour (0xff0b0b0c)); g.fillEllipse (circle (R - 6.f));
+    const float rr = R - 17.f;
     for (int i = 0; i < 40; ++i)                                                  // 回るくぼみ
     {
         const float a = shown + MathConstants<float>::twoPi * (float) i / 40.f;
-        const float rr = R - 17.f;
-        const Rectangle<float> dot (c.x + std::cos (a) * rr - 2.4f, c.y + std::sin (a) * rr - 2.4f, 4.8f, 4.8f);
-        g.setColour (Colour (0xff060b1a)); g.fillEllipse (dot);
-        g.setColour (i == 0 ? ui::amber : Colour (0xff22314f)); g.drawEllipse (dot, 1.f);
+        const Rectangle<float> dot (c.x + std::cos (a) * rr - 3.2f, c.y + std::sin (a) * rr - 3.2f, 6.4f, 6.4f);
+        g.setColour (Colour (0xff040405)); g.fillEllipse (dot);
+        g.setColour (i == 0 ? ui::amber : Colour (0xff303033)); g.drawEllipse (dot, 1.f);
     }
-    const float rp = R * 0.66f;                                                   // 内側のプラッター
-    g.setColour (Colour (0xff0d1529)); g.fillEllipse (circle (rp));
-    g.setColour (ui::padEdge);         g.drawEllipse (circle (rp), 1.f);
+    const float rp = R * 0.66f;                                                   // 内側の盤
+    g.setColour (Colour (0xff050505)); g.fillEllipse (circle (rp));
+    g.setColour (Colour (0xff2a2a2d)); g.drawEllipse (circle (rp), 1.f);
+    for (int i = 1; i <= 3; ++i)                                                  // 盤のうっすらした同心円
+    {
+        g.setColour (Colour (0xff0e0e0f)); g.drawEllipse (circle (rp - 8.f * (float) i), 1.f);
+    }
 
-    const float ra = rp - 9.f;                                                    // 左右で色が違うアーク(回転に追従)
+    const float ra = rp - 9.f;                                                    // 回転に追従する色付きアーク
     for (int side = 0; side < 2; ++side)
     {
         Path arc;
         const float start = shown + (side ? -MathConstants<float>::halfPi : MathConstants<float>::halfPi) + 0.35f;
         arc.addCentredArc (c.x, c.y, ra, ra, 0.f, start, start + MathConstants<float>::pi - 0.7f, true);
-        g.setColour ((side ? ui::amber : ui::teal).withAlpha (dragging ? 1.f : 0.8f));
-        g.strokePath (arc, PathStrokeType (5.f, PathStrokeType::curved, PathStrokeType::butt));
+        g.setColour ((side ? ui::amber : ui::teal).withAlpha (dragging ? 1.f : 0.85f));
+        g.strokePath (arc, PathStrokeType (3.5f, PathStrokeType::curved, PathStrokeType::butt));
     }
     const float rc = ra - 10.f;
     g.setColour (ui::panel); g.fillEllipse (circle (rc));
@@ -552,7 +572,7 @@ void FxDisplay::paint (Graphics& g)
 
     auto r = getLocalBounds().toFloat();
     g.setColour (ui::well);    g.fillRoundedRectangle (r, 3.f);
-    g.setColour (Colour (0xff02050d)); g.drawRoundedRectangle (r.reduced (0.5f), 3.f, 1.f);
+    g.setColour (Colour (0xff010101)); g.drawRoundedRectangle (r.reduced (0.5f), 3.f, 1.f);
     g.setColour (ui::padEdge); g.drawRoundedRectangle (r.reduced (1.5f), 2.f, 1.f);
 
     // 上段: 同期の表示とBPM
@@ -590,7 +610,7 @@ void FxDisplay::paint (Graphics& g)
     {
         Rectangle<float> cell (150.f + (float) (k + 1) * 80.f, 22.f, 78.f, 46.f);
         const String t = reverb ? cellText (curIdx + k) : cellText (curIdx + k);
-        if (t.isEmpty() && k != 0) { g.setColour (Colour (0xff0b1224)); g.fillRect (cell); continue; }
+        if (t.isEmpty() && k != 0) { g.setColour (Colour (0xff0e0e0f)); g.fillRect (cell); continue; }
         if (k == 0)
         {
             g.setColour (ui::text.withAlpha (dimA)); g.fillRect (cell);
@@ -598,7 +618,7 @@ void FxDisplay::paint (Graphics& g)
         }
         else
         {
-            g.setColour (Colour (0xff111b36)); g.fillRect (cell);
+            g.setColour (Colour (0xff181819)); g.fillRect (cell);
             g.setFont (l.fontBold (1.5f)); g.setColour (ui::text.withAlpha (0.8f * dimA));
         }
         g.drawText (t, cell.toNearestInt(), Justification::centred, false);
@@ -613,11 +633,11 @@ void FxDisplay::paint (Graphics& g)
         {
             Rectangle<float> chip (8.f + cw * (float) i, 76.f, cw - 2.f, 22.f);
             if (i == idx) { g.setColour (ui::text.withAlpha (dimA)); g.fillRect (chip); g.setColour (ui::ink); }
-            else { g.setColour (Colour (0xff0f1930)); g.fillRect (chip); g.setColour (ui::text.withAlpha (0.7f * dimA)); }
+            else { g.setColour (Colour (0xff161617)); g.fillRect (chip); g.setColour (ui::text.withAlpha (0.7f * dimA)); }
             g.drawText (list.label[i], chip.toNearestInt(), Justification::centred, false);
         }
     }
-    g.setColour (ui::teal.withAlpha (on ? 1.f : 0.5f));
+    g.setColour (Colour (0xff6c4cff).withAlpha (on ? 1.f : 0.5f));
     g.fillRect (8.f, 102.f, (float) getWidth() - 16.f, 6.f);
 }
 
@@ -777,6 +797,7 @@ NamiDJFXEditor::NamiDJFXEditor (NamiDJFXProcessor& p) : AudioProcessorEditor (&p
     hRev = addHold (ids::jogReverse, "REVERSE");
     hLoop = addHold (ids::jogLoop, "LOOP");
     hLive = addHold (ids::jogResync, "RESYNC");
+    for (auto* hb : { hBack, hBrake, hRev, hLoop }) hb->getProperties().set ("cue", true);
     hLive->getProperties().set ("accent", (int) ui::teal.getARGB());
     for (auto* h : { hBack, hBrake, hRev, hLoop }) h->getProperties().set ("accent", (int) ui::amber.getARGB());
 
@@ -1033,7 +1054,7 @@ void NamiDJFXEditor::paint (Graphics& g)
                      Point<float> (18.f, (float) getHeight() - 18.f), Point<float> ((float) getWidth() - 18.f, (float) getHeight() - 18.f) })
     {
         g.setColour (ui::well);   g.fillEllipse (pt.x - 7.f, pt.y - 7.f, 14.f, 14.f);
-        g.setColour (Colour (0xff223052)); g.fillEllipse (pt.x - 5.f, pt.y - 5.f, 10.f, 10.f);
+        g.setColour (Colour (0xff2e2e31)); g.fillEllipse (pt.x - 5.f, pt.y - 5.f, 10.f, 10.f);
         g.setColour (ui::padEdge); g.drawEllipse (pt.x - 5.f, pt.y - 5.f, 10.f, 10.f, 1.f);
         g.setColour (ui::well);   g.drawLine (pt.x - 3.5f, pt.y + 1.5f, pt.x + 3.5f, pt.y - 1.5f, 1.4f);
     }
