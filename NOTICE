@@ -1,0 +1,16 @@
+DJFX Standard
+Copyright (C) 2026 なみぐる (namigroove)
+
+このプログラムは自由ソフトウェアです。GNU Affero General Public License バージョン3(AGPL-3.0)の条件で、
+再配布・改変ができます。全文は LICENSE を見てください。
+配布するプラグイン(.vst3)の元になったソースは、このリポジトリで公開しています。
+
+使っているもの
+- JUCE 8 (https://juce.com) : AGPL-3.0 で使っています。
+- VST3 SDK (Steinberg) : JUCEに同梱のもの。
+- Roboto Regular (Google) : Apache License 2.0。assets/fonts/LICENSE-Roboto-Apache-2.0.txt
+- Noto Sans JP Medium (Adobe / Google) : SIL Open Font License 1.1。UIで使う文字だけのサブセット。assets/fonts/LICENSE-NotoSansJP-OFL-1.1.txt
+
+商標について
+このプラグインは非公式の作品で、Pioneer DJ / AlphaTheta とは関係ありません。
+Pioneer、DJM、CDJ などは各社の商標です。エフェクト名や機能の説明は、各製品の取扱説明書で公開されている情報をもとにした近似の再現です。
