@@ -39,6 +39,13 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
       - name: Build
         run: cmake --build build --config Release --target NamiDJFX_VST3 --parallel
+      - name: 署名し直す(macOS、moduleinfo.json 追加後)
+        if: runner.os == 'macOS'
+        run: |
+          B=$(find build/NamiDJFX_artefacts -name "DJFX Standard.vst3" -type d | head -1)
+          ls -R "$B/Contents" | head -20
+          codesign --force --deep --sign - "$B"
+          codesign --verify --deep --strict --verbose=2 "$B"
       - name: Artifact
         uses: actions/upload-artifact@v4
         with:
