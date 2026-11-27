@@ -313,7 +313,7 @@ int main()
         CHECK (lL > lR * 2 && qR > qL * 2, "space band");
     }
 
-    std::printf("[12] MOBIUS: 上昇/下降の向き(300-900Hzのスペクトル重心の変化方向)\n");
+    std::printf("[12] SHEPARD: 上昇/下降の向き(300-900Hzのスペクトル重心の変化方向)\n");
     for (int dirn = 0; dirn < 2; ++dirn)
     {
         std::vector<float> L ((size_t) (SR * 6)), R; Rng rng; for (auto& v : L) v = 0.3f * rng.white(); R = L;

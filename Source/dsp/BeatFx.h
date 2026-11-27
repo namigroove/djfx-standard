@@ -17,9 +17,9 @@ struct FxCtx
     int   n = 0;
     float level = 0.5f;        // LEVEL/DEPTH 0..1
     float delaySamples = 0.f;  // 時間(サンプル)。ディレイ・ロール系
-    float cycleSamples = 0.f;  // 周期(サンプル)。符号付き(MOBIUS)
+    float cycleSamples = 0.f;  // 周期(サンプル)。符号付き(SHEPARD)
     float norm = 0.5f;         // BEAT/TIME位置 0..1(REVERBの残響量)
-    float xpad = 0.5f;         // X-PAD位置 0..1(REVERBカットオフ / MOBIUS波形)
+    float xpad = 0.5f;         // X-PAD位置 0..1(REVERBカットオフ / SHEPARD波形)
     const float* phase = nullptr; // 周期位相 0..1(サンプルごと)
     float act = 0.f;           // 平滑化済みのON量
     bool  on = false;          // 今ONか(スムージング前)
@@ -119,7 +119,7 @@ private:
     Smoother ts;
 };
 
-// ------------------------------------------------------------ SPIRAL (ピッチが上がっていくフィードバック残響)
+// ------------------------------------------------------------ RISE VERB (ピッチが上がっていくフィードバック残響)
 class SpiralFx : public FxBase
 {
 public:
@@ -166,7 +166,7 @@ private:
     Smoother ts;
 };
 
-// ------------------------------------------------------------ HELIX (録音して重ねるループ)
+// ------------------------------------------------------------ LOOP LAYER (録音して重ねるループ)
 class HelixFx : public FxBase
 {
 public:
@@ -376,7 +376,7 @@ private:
     int pos = 0, len = 0;
 };
 
-// ------------------------------------------------------------ MOBIUS (上がり続ける/下がり続けるシェパードトーン)
+// ------------------------------------------------------------ SHEPARD (上がり続ける/下がり続けるシェパードトーン)
 class MobiusFx : public FxBase
 {
 public:

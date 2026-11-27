@@ -11,8 +11,8 @@ namespace djfx
 // ------------------------------------------------------------ 表示名・拍リスト
 inline const char* fxName (int t)
 {
-    static const char* n[kNumFx] = { "DELAY", "ECHO", "PING PONG", "SPIRAL", "HELIX", "REVERB", "FLANGER",
-                                     "PHASER", "FILTER", "TRIPLET FILTER", "TRANS", "ROLL", "TRIPLET ROLL", "MOBIUS" };
+    static const char* n[kNumFx] = { "DELAY", "ECHO", "PING PONG", "RISE VERB", "LOOP LAYER", "REVERB", "FLANGER",
+                                     "PHASER", "FILTER", "TRIPLET FILTER", "TRANS", "ROLL", "TRIPLET ROLL", "SHEPARD" };
     return n[t < 0 ? 0 : (t >= kNumFx ? kNumFx - 1 : t)];
 }
 inline const char* colorName (int t)

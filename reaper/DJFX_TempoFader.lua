@@ -1,4 +1,4 @@
--- DJFX Standard: TEMPO フェーダー + MASTER TEMPO (CDJ-3000 風)  for REAPER
+-- DJFX Standard: TEMPO フェーダー + MASTER TEMPO (DJプレーヤー風)  for REAPER
 -- アクションリストから読み込んで実行してください(ReaScript / Lua)。
 -- ・フェーダーは基準BPMからの±%。幅は ±6 / ±10 / ±16 / WIDE(±100%)
 -- ・REC をオンにして再生すると、フェーダーの動きがプロジェクトのテンポ(テンポエンベロープ)に書き込まれる
@@ -117,7 +117,7 @@ local function loop()
   gfx.x, gfx.y = FX + 24, FY - 6; gfx.drawstr("-" .. rng .. "%")
   gfx.x, gfx.y = FX + 24, FY + FH - 6; gfx.drawstr("+" .. rng .. "%")
   -- ノブ(キャップ)
-  local ky = FY + FH * (0.5 + pct / rng / 2) -- 上=マイナス、下=プラス(CDJと同じ)
+  local ky = FY + FH * (0.5 + pct / rng / 2) -- 上=マイナス、下=プラス(プレーヤーと同じ向き)
   gfx.set(0.85, 0.85, 0.85, 1); gfx.rect(FX - 22, ky - 12, 44, 24, 1)
   gfx.set(0.1, 0.1, 0.1, 1); gfx.rect(FX - 22, ky - 1, 44, 2, 1)
   gfx.setfont(1, "Arial", 13)

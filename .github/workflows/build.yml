@@ -82,10 +82,10 @@ jobs:
         run: |
           gh release create "$TAG" art/*.zip --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
             --title "DJFX Standard $TAG (beta)" --prerelease \
-            --notes "現場でのDJ操作を、実機がなくてもDAW上でデモンストレーションできたらいいなと思って作りました。DJMのエフェクトとCDJのジョグ操作を再現するVST3です。
+            --notes "現場でのDJ操作を、実機がなくてもDAW上でデモンストレーションできたらいいなと思って作りました。DJミキサーのエフェクトとプレーヤーのジョグ操作を再現するVST3です。
 
           - Windows: DJFX-Standard-windows-x64 の ZIP を展開し、DJFX Standard.vst3 を C:\\Program Files\\Common Files\\VST3 に置く
           - Mac: DJFX-Standard-macos-universal の ZIP を展開し、DJFX Standard.vst3 を /Library/Audio/Plug-Ins/VST3 に置く(未署名のため、初回は右クリックで開く、または xattr -dr com.apple.quarantine で許可が必要)
           - ベータ版です。DAWによって動きが違う可能性があります。不具合は Issues へ
-          - 非公式の作品で、Pioneer DJ / AlphaTheta とは関係ありません
+          - 個人の非公式の作品で、特定のメーカー・製品とは関係ありません
           - ライセンス: AGPL-3.0"

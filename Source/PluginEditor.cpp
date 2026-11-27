@@ -192,7 +192,7 @@ static void softShadow (Graphics& g, Point<float> c, float r)
 }
 static void drawCap (Graphics& g, Point<float> c, float rBody, float angle, bool ridged, bool dimmed)
 {
-    // 実機(DJM-A9)のつまみ: つや消しの黒い胴、左下に回り込む銀の縁の反射、天面は少しくぼみ、太い白のポインタ。
+    // 実機(DJミキサー)のつまみ: つや消しの黒い胴、左下に回り込む銀の縁の反射、天面は少しくぼみ、太い白のポインタ。
     // ridged(COLOR・エフェクト選択)は胴の縁に切り欠きが並ぶ。
     softShadow (g, c, rBody);
     const float ca = std::sin (angle), sa = -std::cos (angle);
@@ -529,7 +529,7 @@ void JogWheel::paint (Graphics& g)
     const float R = std::min (r.getWidth(), r.getHeight()) * 0.5f;
     auto circle = [&] (float rad) { return Rectangle<float> (c.x - rad, c.y - rad, rad * 2, rad * 2); };
 
-    // CDJ-3000風: 銀の外周リング / くぼみが並ぶ黒いリング / つやのある黒い盤 / 中央の色付きリング
+    // DJプレーヤー風: 銀の外周リング / くぼみが並ぶ黒いリング / つやのある黒い盤 / 中央の色付きリング
     g.setColour (Colour (0xffb8b8bc)); g.fillEllipse (circle (R));
     g.setColour (Colour (0xff6a6a6f)); g.drawEllipse (circle (R), 1.f);
     g.setColour (dragging ? ui::amber : ui::teal.withAlpha (0.9f)); g.drawEllipse (circle (R - 7.f), 2.f);   // 周りのLEDリング
@@ -561,7 +561,7 @@ void JogWheel::paint (Graphics& g)
     }
     const float rc = ra - 10.f;
     g.setColour (Colour (0xff0b0b0c)); g.fillEllipse (circle (rc));
-    {   // 中央の色付きリング(CDJ-3000のジョグディスプレイ風)。回転に合わせて色が回る
+    {   // 中央の色付きリング(ジョグディスプレイ風)。回転に合わせて色が回る
         const Colour cols[4] = { Colour (0xffe0409a), Colour (0xff3d7bff), Colour (0xfff08a1c), Colour (0xff35c2b0) };
         for (int i = 0; i < 4; ++i)
         {
@@ -706,7 +706,7 @@ void FxDisplay::paint (Graphics& g)
 // ------------------------------------------------------------------ エフェクト選択ロータリー
 FxSelector::FxSelector (AudioProcessorValueTreeState& s) : apvts (s) {}
 
-float FxSelector::angleOf (int i) const   // 12時を0とした時計回りの角度。DELAYが左下、MOBIUSが右下
+float FxSelector::angleOf (int i) const   // 12時を0とした時計回りの角度。DELAYが左下、SHEPARDが右下
 {
     return (-140.f + (float) i * (280.f / (float) (djfx::kNumFx - 1))) * MathConstants<float>::pi / 180.f;
 }
